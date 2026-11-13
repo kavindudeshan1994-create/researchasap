@@ -12,7 +12,7 @@ const JOURNALS=[...new Set(Object.values(GROUPS).flat())];
 const DEFAULT=["Nature","Science","Cell","Journal of the American Chemical Society","Angewandte Chemie International Edition","Nature Chemical Biology","ACS Chemical Biology","Nature Communications"];
 const $=id=>document.getElementById(id);
 const load=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback}catch{return fallback}};
-const state={selected:new Set(load("rasap.journals",DEFAULT)),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",loading:false,request:0,hasMore:false};
+const state={selected:new Set(load("rasap.journals",DEFAULT)),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plain=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,positions] of Object.entries(idx)){for(const p of positions)if(Number.isInteger(p)&&p>=0&&p<5000)arr[p]=word}return arr.filter(Boolean).join(" ")};
@@ -123,7 +123,7 @@ function card(p){
  return '<article class="paper paper-horizontal">'+graphicMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Show abstract</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
-function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
+function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
 function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
 
 async function timedJSON(url,ms=9000){
@@ -149,7 +149,7 @@ async function fetchCrossref(names,cutoff){
    const d=w.published?.["date-parts"]?.[0]||w.issued?.["date-parts"]?.[0]||[];
    const date=d.map((x,k)=>k?String(x).padStart(2,"0"):String(x)).join("-");
    if(date&&date.padEnd(10,"-01")<cutoff)continue;
-   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
+   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:(w.license||[]).some(l=>/creativecommons\.org\/licenses\/(by|by-sa|by-nc|zero)|creativecommons\.org\/publicdomain|openaccess|open-access/i.test(l.URL||""))};
    found.set(p.id,p);
   }
  });
@@ -258,6 +258,7 @@ $("tabLatest").onclick=()=>{state.view="latest";render()};
 $("tabSaved").onclick=()=>{state.view="saved";$("status").textContent="Saved papers are stored only on this device.";render()};
 $("paperSearch").addEventListener("input",e=>{state.query=e.target.value;render()});
 $("sort").addEventListener("change",render);
+$("oaOnly").addEventListener("change",e=>{state.oaOnly=e.target.checked;render();});
 $("previous").onclick=()=>{if(state.page>1){state.page--;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
 $("next").onclick=()=>{if(state.hasMore){state.page++;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
 $("papers").addEventListener("click",e=>{const detail=e.target.closest("[data-detail]");if(detail){showDetail(detail.dataset.detail);return}const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
