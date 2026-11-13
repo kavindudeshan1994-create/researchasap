@@ -39,3 +39,13 @@ body.journal-popup-open{overflow:hidden}
 /* ChemASAP-inspired article layout: real figure left, article details right */
 
 .oa-toggle{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:650;color:#285d48;white-space:nowrap;padding:8px 10px;background:#eaf7f0;border-radius:9px}.oa-toggle input{accent-color:#168455;width:16px;height:16px}
+
+.paper.paper-with-concept{display:grid;grid-template-columns:minmax(200px,30%) minmax(0,1fr);padding:0;overflow:hidden;align-items:stretch}
+.paper-with-concept .paper-copy{padding:18px 22px;min-width:0}
+.paper-concept{background:linear-gradient(140deg,#eaf1ff,#f3f7ff);border-right:1px solid #dce5f4;min-height:215px;padding:20px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;color:#244675}
+.concept-heading{font-size:11px;letter-spacing:1.4px;font-weight:800}
+.concept-mark{font-size:48px;line-height:1}
+.concept-steps{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;font-weight:650;flex-wrap:wrap}
+.concept-steps span{border:1px solid #cad9f0;background:#fff;border-radius:8px;padding:8px;max-width:125px}
+.concept-disclaimer{font-size:10px;color:#647b9c}
+@media(max-width:680px){.paper.paper-with-concept{grid-template-columns:1fr}.paper-concept{min-height:160px;border-right:0;border-bottom:1px solid #dce5f4}.paper-with-concept .paper-copy{padding:16px}}
