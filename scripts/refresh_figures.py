@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cache verifiable, openly licensed ACS Nano article images for ResearchASAP."""
+"""Cache verifiable ACS Nano article images for ResearchASAP."""
 import json, os, pathlib, re, time, urllib.parse, urllib.request
 from html.parser import HTMLParser
 
@@ -24,8 +24,8 @@ def fetch(url,limit=4000000):
  with urllib.request.urlopen(req,timeout=18) as response:
   return response.read(limit),response.headers.get("Content-Type",""),response.geturl()
 def image_ext(data,content_type):
- if data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):return "png"
- if data.startswith(b"\\xff\\xd8\\xff"):return "jpg"
+ if data.startswith(bytes.fromhex("89504e470d0a1a0a")):return "png"
+ if data.startswith(bytes.fromhex("ffd8ff")):return "jpg"
  if data.startswith((b"GIF87a",b"GIF89a")):return "gif"
  if data.startswith(b"RIFF") and data[8:12]==b"WEBP":return "webp"
  return None
