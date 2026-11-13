@@ -106,11 +106,12 @@ async function timedJSON(url,ms=9000){
  try{const r=await fetch(url,{signal:ctrl.signal});if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
  finally{clearTimeout(timer)}
 }
+const CROSSREF_ISSN={"Nature":"1476-4687","Science":"1095-9203","Cell":"1097-4172","Journal of the American Chemical Society":"1520-5126","Angewandte Chemie International Edition":"1521-3773","Nature Chemical Biology":"1552-4469","ACS Chemical Biology":"1554-8937","Nature Communications":"2041-1723","Science Advances":"2375-2548","Scientific Reports":"2045-2322","Chemical Science":"2041-6539","Organic Letters":"1523-7052","ACS Nano":"1936-086X","Nano Letters":"1530-6992","Nature Materials":"1476-4660","Nature Nanotechnology":"1748-3395","Nature Cell Biology":"1476-4679","Nature Methods":"1548-7105","Advanced Materials":"1521-4095","Analytical Chemistry":"1520-6882"};
 async function fetchCrossref(names,cutoff){
  const found=new Map();
  const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
  const chosen=names.slice(0,Math.min(names.length,12));
- const results=await Promise.allSettled(chosen.map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",12000)));
+ const results=await Promise.allSettled(chosen.map(n=>timedJSON(CROSSREF_ISSN[n]?"https://api.crossref.org/journals/"+CROSSREF_ISSN[n]+"/works?filter=from-pub-date:"+cutoff+"&rows=60&sort=published&order=desc":"https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",15000)));
  let errors=0;
  results.forEach((result,i)=>{
   if(result.status!=="fulfilled"){errors++;return}
@@ -119,7 +120,7 @@ async function fetchCrossref(names,cutoff){
    if(!w.DOI)continue;
    const journal=w["container-title"]?.[0]||"";
    const candidate=norm(journal);
-   if(candidate!==target && !(target.length>8&&(candidate.includes(target)||target.includes(candidate))) && !(candidate.length>8&&target.includes(candidate)))continue;
+   if(!CROSSREF_ISSN[chosen[i]] && candidate!==target && !(target.length>8&&(candidate.includes(target)||target.includes(candidate))) && !(candidate.length>8&&target.includes(candidate)))continue;
    const d=w.published?.["date-parts"]?.[0]||w.issued?.["date-parts"]?.[0]||[];
    const date=d.map((x,k)=>k?String(x).padStart(2,"0"):String(x)).join("-");
    if(date&&date.padEnd(10,"-01")<cutoff)continue;
