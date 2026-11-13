@@ -105,7 +105,10 @@ async function fetchCrossref(names,cutoff){
  const found=new Map();
  const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
  const chosen=[...new Set(names)];
- const results=await Promise.allSettled(chosen.map(n=>timedJSON(CROSSREF_ISSN[n]?"https://api.crossref.org/journals/"+CROSSREF_ISSN[n]+"/works?filter=from-pub-date:"+cutoff+"&rows=60&sort=published&order=desc":"https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",15000)));
+ const results=new Array(chosen.length);
+ let next=0;
+ async function crossrefWorker(){while(next<chosen.length){const i=next++,n=chosen[i];try{results[i]={status:"fulfilled",value:await timedJSON(CROSSREF_ISSN[n]?"https://api.crossref.org/journals/"+CROSSREF_ISSN[n]+"/works?filter=from-pub-date:"+cutoff+"&rows=60&sort=published&order=desc":"https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",15000)}}catch(reason){results[i]={status:"rejected",reason}}}}
+ await Promise.all(Array.from({length:Math.min(3,chosen.length)},()=>crossrefWorker()));
  let errors=0;
  results.forEach((result,i)=>{
   if(result.status!=="fulfilled"){errors++;return}
@@ -187,17 +190,17 @@ async function fetchPapers(){
     const group=groups[index++];
     try{
      const filter="primary_location.source.id:"+group[0]+",from_publication_date:"+date;
-     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=100&page="+state.page;
+     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=100&page=1";
      responses.push(await timedJSON(url,10000));
     }catch{failures++}
    }
   }
-  await Promise.all(Array.from({length:Math.min(4,groups.length)},()=>worksWorker()));
+  await Promise.all(Array.from({length:Math.min(2,groups.length)},()=>worksWorker()));
   if(request!==state.request)return;
   const found=new Map();
   for(const data of responses)for(const w of data.results||[])found.set(w.id,normalize(w));
   papers=[...found.values()].sort(comparePublished);
-  state.hasMore=responses.some(x=>(x.meta?.count||0)>state.page*100);
+  state.hasMore=false;
  }catch{failures++}
  if(request!==state.request)return;
  try{
@@ -213,7 +216,7 @@ async function fetchPapers(){
   for(const p of [...crossrefPapers,...preprintPapers,...papers]){const key=(p.doi||p.id).toLowerCase();const prior=merged.get(key);if(!prior||(!prior.abstract&&p.abstract))merged.set(key,p)}
   state.papers=[...merged.values()].sort(comparePublished);
   const journalBreakdown=[...new Set(state.papers.map(p=>p.journal))];
-  $("status").textContent="Showing "+state.papers.length+" papers from "+journalBreakdown.length+" journals · Last 30 days · "+selected.length+" selected"+(failures?" · Some requests failed":"")+(journalBreakdown.length===1?" · Only "+journalBreakdown[0]+" returned papers":"");
+  $("status").textContent="Showing "+state.papers.length+" papers from "+journalBreakdown.length+" journals · Last 30 days · "+selected.length+" selected"+(failures?" · "+failures+" OpenAlex requests failed":"")+(journalBreakdown.length===1?" · Only "+journalBreakdown[0]+" returned papers":"");
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
  }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
  finally{if(request===state.request){state.loading=false;render()}}
