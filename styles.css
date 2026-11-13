@@ -55,3 +55,17 @@ body.journal-popup-open{overflow:hidden}
 @media(max-width:430px){.concept-node{min-width:90px}.concept-flow{gap:8px}}
 
 .concept-figure.has-graphic{position:relative;min-height:190px;background:#fff;color:#24344b}.concept-figure.has-graphic img{display:block;width:100%;max-height:290px;object-fit:contain;background:#fff}.concept-figure.has-graphic .visual-caption{display:block;padding:7px 10px;background:#f0f4fa;color:#354861;font-size:11px}
+
+/* ChemASAP-inspired article layout: real figure left, article details right */
+.paper.paper-horizontal{display:grid;grid-template-columns:minmax(230px,32%) minmax(0,1fr);gap:0;padding:0;overflow:hidden;align-items:stretch}
+.paper-horizontal .paper-copy{min-width:0;padding:20px 22px;display:flex;flex-direction:column;justify-content:center}
+.paper-horizontal .paper-figure{margin:0;border-radius:0;border-right:1px solid #e6ebf2;min-height:225px;position:relative;background:#f9fbfd;color:#53627a;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:15px}
+.paper-horizontal .figure-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;font-size:12px;max-width:250px}
+.paper-horizontal .figure-icon{font-size:38px;opacity:.45}
+.paper-horizontal .figure-empty a{font-weight:650;color:#2859a7;text-decoration:underline}
+.paper-horizontal .paper-figure .visual-caption{position:absolute;bottom:0;left:0;right:0;text-align:center;font-size:10px;padding:6px;background:rgba(244,247,251,.95);color:#61718a}
+.paper-horizontal .paper-figure.has-graphic{padding:0;background:white}
+.paper-horizontal .paper-figure.has-graphic .figure-empty{display:none}
+.paper-horizontal .paper-figure.has-graphic img{width:100%;height:100%;max-height:330px;object-fit:contain;display:block;margin:auto;padding:8px 8px 27px}
+.paper-horizontal .paper-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:9px;padding:10px 14px;font-weight:650}
+@media(max-width:680px){.paper.paper-horizontal{grid-template-columns:1fr}.paper-horizontal .paper-figure{border-right:0;border-bottom:1px solid #e6ebf2;min-height:195px;max-height:290px}.paper-horizontal .paper-copy{padding:16px}.paper-horizontal .paper-figure.has-graphic img{max-height:280px}}
