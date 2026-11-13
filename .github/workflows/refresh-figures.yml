@@ -22,5 +22,6 @@ jobs:
           git add data/figures.json images/articles/
           if ! git diff --cached --quiet; then
             git commit -m "Cache verified ACS Nano article images"
-            git push
+            git pull --rebase origin main
+          git push origin HEAD:main
           fi
