@@ -144,82 +144,74 @@ async function fetchPreprints(names,cutoff){
 }
 async function fetchPapers(){
  const request=++state.request;
- state.loading=true;state.hasMore=false;
- if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
- $("status").textContent="Checking recent papers through Crossref…";render();
- const selected=[...state.selected],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
+ const selected=[...state.selected];
+ const preprints=selected.filter(n=>n==="bioRxiv"||n==="medRxiv");
+ const journals=selected.filter(n=>!preprints.includes(n));
  const cutoff=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
- const windowLabel="Last 1 month";
- let crossrefPapers=[];
- let preprintPapers=[];
- try{
-  const [backup,preprints]=await Promise.all([journalNames.length?fetchCrossref(journalNames,cutoff):Promise.resolve({papers:[],errors:0,checked:0}),preprintNames.length?fetchPreprints(preprintNames,cutoff):Promise.resolve([])]);
+ state.loading=true;state.hasMore=false;state.papers=[];state.page=1;
+ if(!selected.length){$("status").textContent="Select at least one journal.";state.loading=false;render();return}
+ const found=new Map(),completed=[],failed=[],empty=[];
+ const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+ const add=p=>{
+  const doi=String(p.doi||"").replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"").toLowerCase();
+  const key=doi||p.id;
+  const old=found.get(key);
+  if(!old||(!old.abstract&&p.abstract))found.set(key,p);
+ };
+ const update=()=>{
   if(request!==state.request)return;
-  if(backup.papers.length||preprints.length){
-   crossrefPapers=backup.papers;
-   preprintPapers=preprints;
-   $("status").textContent="Checking additional selected journals through OpenAlex…";render();
-  }
-  if(!backup.papers.length&&!preprints.length){$("status").textContent="Crossref returned no papers; checking OpenAlex…";render()}
- }catch(e){$("status").textContent="Crossref error: "+e.message+"; checking OpenAlex…";render()}
-
- let cursor=0;let failures=0;let papers=[];
- try{
-  const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
-  async function sourceWorker(){
-   while(cursor<journalNames.length){
-    if(request!==state.request)return;
-    const name=journalNames[cursor++];
-    if(cache[name]){ids.push(cache[name]);continue}
-    try{
-     const data=await timedJSON("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10",7000);
-     const match=(data.results||[]).find(x=>norm(x.display_name)===norm(name));
-     if(match){cache[name]=match.id;ids.push(match.id)}
-    }catch{failures++}
-   }
-  }
-  await Promise.all(Array.from({length:Math.min(3,journalNames.length)},()=>sourceWorker()));
-  if(request!==state.request)return;
-  try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
-  const unique=[...new Set(ids)],groups=unique.map(id=>[id]);
-  let index=0;const responses=[];
-  const date=cutoff;
-  async function worksWorker(){
-   while(index<groups.length){
-    if(request!==state.request)return;
-    const group=groups[index++];
-    try{
-     const filter="primary_location.source.id:"+group[0]+",from_publication_date:"+date;
-     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=100&page=1";
-     responses.push(await timedJSON(url,10000));
-    }catch{failures++}
-   }
-  }
-  await Promise.all(Array.from({length:Math.min(2,groups.length)},()=>worksWorker()));
-  if(request!==state.request)return;
-  const found=new Map();
-  for(const data of responses)for(const w of data.results||[])found.set(w.id,normalize(w));
-  papers=[...found.values()].sort(comparePublished);
-  state.hasMore=false;
- }catch{failures++}
- if(request!==state.request)return;
- try{
-  if(!papers.length&&!crossrefPapers.length&&!preprintPapers.length){
-   $("status").textContent="Trying backup paper source…";render();
-   const fallback=await fetchCrossref(journalNames,cutoff);
-   papers=fallback.papers;
-   state.hasMore=false;
-   if(request!==state.request)return;
-   $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel:"No papers returned · "+windowLabel+" · "+failures+" OpenAlex request failures. Try selecting Nature or Science to test the connection.";
-  }else $("status").textContent="Showing "+papers.length+" recent papers · "+windowLabel+(failures?" · Some requests failed":"");
-  const merged=new Map();
-  for(const p of [...crossrefPapers,...preprintPapers,...papers]){const key=(p.doi||p.id).toLowerCase();const prior=merged.get(key);if(!prior||(!prior.abstract&&p.abstract))merged.set(key,p)}
-  state.papers=[...merged.values()].sort(comparePublished);
-  const journalBreakdown=[...new Set(state.papers.map(p=>p.journal))];
-  $("status").textContent="Showing "+state.papers.length+" papers from "+journalBreakdown.length+" journals · Last 30 days · "+selected.length+" selected"+(failures?" · "+failures+" OpenAlex requests failed":"")+(journalBreakdown.length===1?" · Only "+journalBreakdown[0]+" returned papers":"");
+  state.papers=[...found.values()].sort(comparePublished);
+  const represented=new Set(state.papers.map(p=>norm(p.journal)));
+  const count=selected.filter(n=>represented.has(norm(n))).length;
+  $("status").textContent="Loaded "+state.papers.length+" papers from "+count+" journals · Checked "+completed.length+"/"+selected.length+" · "+failed.length+" failed"+(empty.length?" · "+empty.length+" without matching papers":"")+(failed.length?" · Failed: "+failed.slice(0,8).join(", ")+(failed.length>8?"…":""):"");
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
- }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
- finally{if(request===state.request){state.loading=false;render()}}
+  render();
+ };
+ update();
+ let next=0;
+ async function worker(){
+  while(next<journals.length){
+   if(request!==state.request)return;
+   const name=journals[next++];
+   let succeeded=false,returned=0;
+   // Fetch each journal independently. Never let one prolific journal consume another's quota.
+   try{
+    const result=await fetchCrossref([name],cutoff);
+    if(result.errors===0){succeeded=true;for(const p of result.papers){add(p);returned++}}
+   }catch{}
+   // OpenAlex is an independent fallback for journals with no Crossref response.
+   if(!returned){
+    try{
+     const cache=load("rasap.sourceIds",{});
+     let id=cache[name];
+     if(!id){
+      const data=await timedJSON("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10",12000);
+      const match=(data.results||[]).find(x=>norm(x.display_name)===norm(name));
+      id=match?.id;
+      if(id){cache[name]=id;try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}}
+     }
+     if(id){
+      const filter="primary_location.source.id:"+id+",from_publication_date:"+cutoff;
+      const data=await timedJSON("https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=200",16000);
+      succeeded=true;
+      for(const w of data.results||[]){const p=normalize(w);if(norm(p.journal)===norm(name)){add(p);returned++}}
+     }
+    }catch{}
+   }
+   if(request!==state.request)return;
+   completed.push(name);
+   if(!succeeded)failed.push(name);else if(!returned)empty.push(name);
+   update();
+  }
+ }
+ await Promise.all(Array.from({length:Math.min(4,journals.length)},()=>worker()));
+ if(request!==state.request)return;
+ if(preprints.length){
+  try{const results=await fetchPreprints(preprints,cutoff);for(const p of results)add(p);completed.push(...preprints)}catch{failed.push(...preprints);completed.push(...preprints)}
+ }
+ if(request!==state.request)return;
+ state.loading=false;update();
+ if(failed.length)$("status").textContent+=" · Refresh to retry failed journals";
 }
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;updateJournalCount()});
 $("journalSearch").addEventListener("input",renderJournals);
