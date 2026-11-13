@@ -1,18 +1,10 @@
 "use strict";
-const GROUPS={
-"General science":["Nature","Science","Cell","Proceedings of the National Academy of Sciences","Science Advances","Nature Communications","Scientific Reports","eLife"],
-"Chemistry":["Journal of the American Chemical Society","Angewandte Chemie International Edition","Nature Chemistry","Chemical Science","ACS Central Science","Organic Letters","The Journal of Organic Chemistry","Chemical Communications","Chemical Reviews","Accounts of Chemical Research","Chemical Society Reviews","Chemistry – A European Journal","Communications Chemistry"],
-"Chemical biology & biochemistry":["Nature Chemical Biology","ACS Chemical Biology","Cell Chemical Biology","RSC Chemical Biology","ChemBioChem","Bioconjugate Chemistry","Journal of Medicinal Chemistry","Biochemistry","Journal of Biological Chemistry","Molecular Cell","Nature Structural & Molecular Biology","The EMBO Journal","Protein Science","Journal of Molecular Biology"],
-"Cell & membrane biology":["Nature Cell Biology","Journal of Cell Biology","Molecular Biology of the Cell","Current Biology","Cell Reports","Traffic","Biochimica et Biophysica Acta (BBA) - Biomembranes","Journal of Membrane Biology","Journal of General Physiology"],
-"Imaging & analytics":["Nature Methods","Analytical Chemistry","ACS Sensors","Biosensors and Bioelectronics","Lab on a Chip"],
-"Preprints (not peer-reviewed)":["bioRxiv","medRxiv"],
-"Materials & nanoscience":["Nature Materials","Nature Nanotechnology","Advanced Materials","Advanced Functional Materials","ACS Nano","Nano Letters","Small","Advanced Science","ACS Applied Materials & Interfaces","Materials Horizons","Nanoscale Horizons","Nanoscale","Journal of Materials Chemistry B","Biomaterials Science","The Journal of Physical Chemistry B","The Journal of Physical Chemistry C","The Journal of Physical Chemistry Letters","Nature Photonics","Nature Biomedical Engineering","Nature Biotechnology"]
-};
+const GROUPS={"ACS Nano pilot":["ACS Nano"]};
 const JOURNALS=[...new Set(Object.values(GROUPS).flat())];
-const DEFAULT=["Nature","Science","Cell","Journal of the American Chemical Society","Angewandte Chemie International Edition","Nature Chemical Biology","ACS Chemical Biology","Nature Communications"];
+const DEFAULT=["ACS Nano"];
 const $=id=>document.getElementById(id);
 const load=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback}catch{return fallback}};
-const state={selected:new Set(load("rasap.journals",DEFAULT)),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
+const state={selected:new Set(["ACS Nano"]),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plain=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,positions] of Object.entries(idx)){for(const p of positions)if(Number.isInteger(p)&&p>=0&&p<5000)arr[p]=word}return arr.filter(Boolean).join(" ")};
@@ -125,7 +117,7 @@ async function fetchPapers(){
  state.loading=true;state.hasMore=false;
  if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
  $("status").textContent="Checking recent papers through Crossref…";render();
- const selected=[...state.selected],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
+ const selected=["ACS Nano"],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
  const shortWindow=selected.length>5;
  const cutoff=new Date(Date.now()-(shortWindow?48*3600000:365*86400000)).toISOString().slice(0,10);
  const windowLabel=shortWindow?"Last 48 hours":"Last 1 year";
@@ -200,7 +192,7 @@ async function fetchPapers(){
 }
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;updateJournalCount()});
 $("journalSearch").addEventListener("input",renderJournals);
-$("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1};
+$("allJournals").onclick=()=>{state.selected=new Set(["ACS Nano"]);store();renderJournals();state.page=1};
 $("clearJournals").onclick=()=>{state.selected.clear();store();renderJournals();state.page=1;updateJournalCount()};
 $("refresh").onclick=fetchPapers;
 $("tabLatest").onclick=()=>{state.view="latest";render()};
