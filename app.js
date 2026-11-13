@@ -75,7 +75,7 @@ const candidates=[graphical,overview,figures[0],...figures].filter((f,i,a)=>f&&a
 for(const fig of candidates){
  const graphic=fig.getElementsByTagName('graphic')[0]||fig.getElementsByTagName('inline-graphic')[0];
  const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
- if(!href||!/^[-\\w.]+$/.test(href))continue;
+ if(!href||!/^[A-Za-z0-9_.-]+$/.test(href))continue;
  return {url:'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href),type:fig===graphical?'Graphical abstract':fig===overview?'Concept / overview figure':'Figure from paper'};
 }
 return null;
