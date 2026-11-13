@@ -81,7 +81,7 @@ const CROSSREF_ISSN={"Nature":"1476-4687","Science":"1095-9203","Cell":"1097-417
 async function fetchCrossref(names,cutoff){
  const found=new Map();
  const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
- const chosen=names.slice(0,Math.min(names.length,12));
+ const chosen=[...new Set(names)];
  const results=await Promise.allSettled(chosen.map(n=>timedJSON(CROSSREF_ISSN[n]?"https://api.crossref.org/journals/"+CROSSREF_ISSN[n]+"/works?filter=from-pub-date:"+cutoff+"&rows=60&sort=published&order=desc":"https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",15000)));
  let errors=0;
  results.forEach((result,i)=>{
