@@ -157,7 +157,7 @@ async function fetchPapers(){
    preprintPapers=preprints;
    $("status").textContent="Checking additional selected journals through OpenAlex…";render();
   }
-  $("status").textContent="Crossref returned no matching papers ("+backup.errors+"/"+backup.checked+" requests failed); checking OpenAlex…";render();
+  if(!backup.papers.length&&!preprints.length){$("status").textContent="Crossref returned no papers; checking OpenAlex…";render()}
  }catch(e){$("status").textContent="Crossref error: "+e.message+"; checking OpenAlex…";render()}
 
  let cursor=0;let failures=0;let papers=[];
@@ -178,8 +178,7 @@ async function fetchPapers(){
   await Promise.all(Array.from({length:Math.min(3,journalNames.length)},()=>sourceWorker()));
   if(request!==state.request)return;
   try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
-  const unique=[...new Set(ids)],groups=[];
-  for(let i=0;i<unique.length;i+=12)groups.push(unique.slice(i,i+12));
+  const unique=[...new Set(ids)],groups=unique.map(id=>[id]);
   let index=0;const responses=[];
   const date=cutoff;
   async function worksWorker(){
@@ -187,18 +186,18 @@ async function fetchPapers(){
     if(request!==state.request)return;
     const group=groups[index++];
     try{
-     const filter="primary_location.source.id:"+group.join("|")+",from_publication_date:"+date;
-     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=24&page="+state.page;
+     const filter="primary_location.source.id:"+group[0]+",from_publication_date:"+date;
+     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=100&page="+state.page;
      responses.push(await timedJSON(url,10000));
     }catch{failures++}
    }
   }
-  await Promise.all(Array.from({length:Math.min(2,groups.length)},()=>worksWorker()));
+  await Promise.all(Array.from({length:Math.min(4,groups.length)},()=>worksWorker()));
   if(request!==state.request)return;
   const found=new Map();
   for(const data of responses)for(const w of data.results||[])found.set(w.id,normalize(w));
   papers=[...found.values()].sort(comparePublished);
-  state.hasMore=responses.some(x=>(x.meta?.count||0)>state.page*24);
+  state.hasMore=responses.some(x=>(x.meta?.count||0)>state.page*100);
  }catch{failures++}
  if(request!==state.request)return;
  try{
