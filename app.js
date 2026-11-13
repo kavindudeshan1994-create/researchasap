@@ -24,9 +24,13 @@ const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publi
 function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
 
+const verifiedFigures={};
+const doiKey=p=>String(p.doi||"").split("doi.org/").pop().toLowerCase();
+fetch('./data/figures.json?v=20261113ab').then(r=>r.ok?r.json():{}).then(data=>{Object.assign(verifiedFigures,data);figureCache.clear();loadFigures()}).catch(()=>{});
 const figureCache=new Map();
 async function findFigureOne(p){
  if(!p.doi)return null;
+ if(verifiedFigures[doiKey(p)]?.url)return verifiedFigures[doiKey(p)].url;
  const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
  try{
   const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
