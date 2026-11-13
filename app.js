@@ -145,16 +145,15 @@ async function fetchPapers(){
  const selected=[...state.selected],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
  const cutoff=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
  const windowLabel="Last 1 month";
+ let crossrefPapers=[];
+ let preprintPapers=[];
  try{
   const [backup,preprints]=await Promise.all([journalNames.length?fetchCrossref(journalNames,cutoff):Promise.resolve({papers:[],errors:0,checked:0}),preprintNames.length?fetchPreprints(preprintNames,cutoff):Promise.resolve([])]);
   if(request!==state.request)return;
   if(backup.papers.length||preprints.length){
-   state.papers=[...backup.papers,...preprints].sort(comparePublished);
-   state.hasMore=false;
-   state.loading=false;
-   $("status").textContent="Showing "+state.papers.length+" papers · "+windowLabel+" · "+backup.checked+" journals checked"+(backup.errors?" · Some journal requests failed":"");
-   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
-   render();return;
+   crossrefPapers=backup.papers;
+   preprintPapers=preprints;
+   $("status").textContent="Checking additional selected journals through OpenAlex…";render();
   }
   $("status").textContent="Crossref returned no matching papers ("+backup.errors+"/"+backup.checked+" requests failed); checking OpenAlex…";render();
  }catch(e){$("status").textContent="Crossref error: "+e.message+"; checking OpenAlex…";render()}
@@ -201,7 +200,7 @@ async function fetchPapers(){
  }catch{failures++}
  if(request!==state.request)return;
  try{
-  if(!papers.length){
+  if(!papers.length&&!crossrefPapers.length&&!preprintPapers.length){
    $("status").textContent="Trying backup paper source…";render();
    const fallback=await fetchCrossref(journalNames,cutoff);
    papers=fallback.papers;
@@ -209,7 +208,10 @@ async function fetchPapers(){
    if(request!==state.request)return;
    $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel:"No papers returned · "+windowLabel+" · "+failures+" OpenAlex request failures. Try selecting Nature or Science to test the connection.";
   }else $("status").textContent="Showing "+papers.length+" recent papers · "+windowLabel+(failures?" · Some requests failed":"");
-  state.papers=papers;
+  const merged=new Map();
+  for(const p of [...crossrefPapers,...preprintPapers,...papers]){const key=(p.doi||p.id).toLowerCase();const prior=merged.get(key);if(!prior||(!prior.abstract&&p.abstract))merged.set(key,p)}
+  state.papers=[...merged.values()].sort(comparePublished);
+  $("status").textContent="Showing "+state.papers.length+" mixed papers · Last 30 days · "+selected.length+" journals selected"+(failures?" · Some requests failed":"");
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
  }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
  finally{if(request===state.request){state.loading=false;render()}}
