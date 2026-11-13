@@ -97,6 +97,7 @@ function currentPapers(){
  const q=state.query.trim().toLowerCase();
  if(state.oaOnly)a=a.filter(p=>p.openAccess===true);
  if(q&&state.view==="saved")a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));
+ if(state.view==="latest"&&q&&$("sort").value!=="oldest")return [...a];
  return [...a].sort((a,b)=>$("sort").value==="oldest"?comparePublished(b,a):comparePublished(a,b));
 }
 function render(){
