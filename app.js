@@ -118,7 +118,6 @@ async function fetchCrossref(names,cutoff){
    const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date:d.map((x,i)=>i?String(x).padStart(2,"0"):x).join("-"),journal:w["container-title"]?.[0]||"",authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
    found.set(p.id,p);
   }
- }
  });
  return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
 }
