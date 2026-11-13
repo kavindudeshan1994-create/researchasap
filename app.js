@@ -24,12 +24,6 @@ function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("j
 
 // Graphical abstracts: only attempt images explicitly identified as graphical abstracts
 // in open-access Europe PMC full-text XML. No arbitrary figures or publisher scraping.
-let publisherFigures={};
-fetch('./data/figures.json?v=20261113q').then(r=>r.ok?r.json():{}).then(data=>{publisherFigures=data||{};graphicCache.clear();queueGraphics()}).catch(()=>{});
-const graphicCache=new Map();
-const graphicPending=new Set();
-const graphicQueue=[];
-let graphicWorkers=0;
 function journalTheme(journal){
 const j=journal.toLowerCase();
 if(/chem|organic|catal|jacs|angew|molecular/.test(j))return ["chem","⬡","CHEMISTRY"];
