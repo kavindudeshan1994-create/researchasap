@@ -58,7 +58,7 @@ function graphicMarkup(p){
 
 async function lookupGraphic(p){
 if(!p.doi)return null;
-const key=p.doi.substring(p.doi.lastIndexOf('doi.org/')+8).toLowerCase();
+const key=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,'').toLowerCase();
 if(publisherFigures[key]?.url)return {url:publisherFigures[key].url,type:publisherFigures[key].type||'Publisher image'};
 const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
 if(!doi)return null;
@@ -75,7 +75,7 @@ const figures=[...xml.getElementsByTagName('fig')];
 const ranked=figures.map((fig,index)=>{
  const label=fig.getElementsByTagName('label')[0]?.textContent?.trim()||'';
  const caption=fig.getElementsByTagName('caption')[0]?.textContent?.trim()||'';
- const isFirst=/^(fig(?:ure)?\\s*[.:-]?\\s*1)\\b/i.test(label);
+ const isFirst=/^(fig(?:ure)?\s*[.:-]?\s*1)\b/i.test(label);
  const isGraphical=/graphical abstract|visual abstract|table of contents graphic|toc graphic/i.test(label+' '+caption);
  return {fig,index,label,isFirst,isGraphical};
 }).sort((a,b)=>Number(b.isGraphical)-Number(a.isGraphical)||Number(b.isFirst)-Number(a.isFirst)||a.index-b.index);
@@ -86,7 +86,7 @@ for(const itemFig of ranked){
  if(!href||!/^[A-Za-z0-9_.-]+$/.test(href))continue;
  const root='https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/';
  const candidates=[href];
- if(!/\\.(?:jpe?g|png|gif|webp|tiff?)$/i.test(href))candidates.push(href+'.jpg',href+'.png',href+'.gif');
+ if(!/\.(?:jpe?g|png|gif|webp|tiff?)$/i.test(href))candidates.push(href+'.jpg',href+'.png',href+'.gif');
  return {url:root+encodeURIComponent(candidates[0]),alternates:candidates.slice(1).map(name=>root+encodeURIComponent(name)),type:itemFig.isGraphical?'Graphical abstract':itemFig.isFirst?'Figure 1':'First available figure'};
 }
 return null;
@@ -123,7 +123,7 @@ if(card.dataset.graphic!==id||card.querySelector('img'))continue;
 const img=document.createElement('img');
 img.loading='lazy';img.alt=result.type+' from the original paper';
 img.referrerPolicy='no-referrer';
-img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+(result.type==='Publisher image'?' · Publisher':' · Europe PMC');};
+card.appendChild(img);img.onload=()=>{card.classList.add('has-graphic');card.querySelector('.visual-caption').textContent=result.type+(result.type==='Publisher image'?' · Publisher':' · Europe PMC');};
 let fallbackIndex=0;img.onerror=()=>{if(fallbackIndex<(result.alternates||[]).length){img.src=result.alternates[fallbackIndex++];return;}graphicCache.set(id,null);img.remove()};
 img.src=result.url;
 }
