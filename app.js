@@ -108,29 +108,50 @@ async function timedJSON(url,ms=9000){
 }
 async function fetchCrossref(names,cutoff){
  const found=new Map();
- const date=cutoff;
- const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
- const results=await Promise.allSettled(names.slice(0,4).map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+date+"&rows=12&sort=published&order=desc",9000)));
+ const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+ const chosen=names.slice(0,Math.min(names.length,8));
+ const results=await Promise.allSettled(chosen.map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=30&sort=published&order=desc",12000)));
+ let errors=0;
  results.forEach((result,i)=>{
-  if(result.status!=="fulfilled")return;
+  if(result.status!=="fulfilled"){errors++;return}
+  const target=norm(chosen[i]);
   for(const w of result.value.message?.items||[]){
-   if(!w.DOI||norm(w["container-title"]?.[0]||"")!==norm(names[i]))continue;
-   const d=w.published?.["date-parts"]?.[0]||[];
-   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date:d.map((x,i)=>i?String(x).padStart(2,"0"):x).join("-"),journal:w["container-title"]?.[0]||"",authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
+   if(!w.DOI)continue;
+   const journal=w["container-title"]?.[0]||"";
+   const candidate=norm(journal);
+   if(candidate!==target && !(target.length>12&&(candidate.includes(target)||target.includes(candidate))))continue;
+   const d=w.published?.["date-parts"]?.[0]||w.issued?.["date-parts"]?.[0]||[];
+   const date=d.map((x,k)=>k?String(x).padStart(2,"0"):String(x)).join("-");
+   if(date&&date<cutoff)continue;
+   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
    found.set(p.id,p);
   }
  });
- return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
+ return {papers:[...found.values()].sort((a,b)=>b.date.localeCompare(a.date)),errors,checked:chosen.length};
 }
 async function fetchPapers(){
  const request=++state.request;
  state.loading=true;state.hasMore=false;
  if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
- $("status").textContent="Updating papers…";render();
+ $("status").textContent="Checking recent papers through Crossref…";render();
  const selected=[...state.selected],cache=load("rasap.sourceIds",{}),ids=[];
  const shortWindow=selected.length>5;
  const cutoff=new Date(Date.now()-(shortWindow?48*3600000:365*86400000)).toISOString().slice(0,10);
  const windowLabel=shortWindow?"Last 48 hours":"Last 1 year";
+ try{
+  const backup=await fetchCrossref(selected,cutoff);
+  if(request!==state.request)return;
+  if(backup.papers.length){
+   state.papers=backup.papers;
+   state.hasMore=false;
+   state.loading=false;
+   $("status").textContent="Showing "+backup.papers.length+" Crossref papers · "+windowLabel+" · "+backup.checked+" journals checked"+(backup.errors?" · Some journal requests failed":"");
+   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+   render();return;
+  }
+  $("status").textContent="No matching Crossref papers; checking OpenAlex…";render();
+ }catch(e){$("status").textContent="Crossref unavailable; checking OpenAlex…";render()}
+
  let cursor=0;let failures=0;let papers=[];
  try{
   const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -175,7 +196,8 @@ async function fetchPapers(){
  try{
   if(!papers.length){
    $("status").textContent="Trying backup paper source…";render();
-   papers=await fetchCrossref(selected,cutoff);
+   const fallback=await fetchCrossref(selected,cutoff);
+   papers=fallback.papers;
    state.hasMore=false;
    if(request!==state.request)return;
    $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel+" · Up to 4 journals":"No papers returned · "+windowLabel+". Try fewer journals or refresh later.";
