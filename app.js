@@ -22,31 +22,6 @@ const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publi
 function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
 
-// Graphical abstracts: only attempt images explicitly identified as graphical abstracts
-// in open-access Europe PMC full-text XML. No arbitrary figures or publisher scraping.
-function journalTheme(journal){
-const j=journal.toLowerCase();
-if(/chem|organic|catal|jacs|angew|molecular/.test(j))return ["chem","⬡","CHEMISTRY"];
-if(/cell|biolog|protein|embo|membrane|biochem/.test(j))return ["bio","✺","LIFE SCIENCES"];
-if(/material|nano|physical|photon|science/.test(j))return ["materials","◇","MATERIALS & SCIENCE"];
-return ["general","✳","RESEARCH"];
-}
-function conceptFor(p){
- const t=(p.title+" "+(p.abstract||"")).toLowerCase();
- const rules=[
-  [/membrane|lipid|bilayer|vesicle|cell surface/,["MEMBRANE","◉","Lipid bilayer","Cell interface"]],
-  [/photo|laser|light|fluorescen|imaging|microscop|optical/,["LIGHT & IMAGING","✺","Light excitation","Optical response"]],
-  [/protein|enzyme|receptor|peptide|antibody/,["MOLECULAR BIOLOGY","⬡","Molecular target","Biological activity"]],
-  [/cancer|tumou?r|therapy|therapeutic|drug/,["BIOMEDICINE","✚","Therapeutic approach","Biological outcome"]],
-  [/nanoparticle|nanomaterial|nanostructure|quantum dot/,["NANOSCIENCE","◇","Nanoscale structure","Material function"]],
-  [/synthesi|cataly|reaction|organic|molecule|chemical/,["CHEMISTRY","⬡","Molecular design","Chemical transformation"]],
-  [/gene|dna|rna|genom|crispr/,["GENETICS","⌁","Genetic system","Molecular response"]],
-  [/temperature|thermal|heat|photothermal/,["THERMAL SCIENCE","☀","Energy input","Thermal response"]]
- ];
- for(const [pattern,data] of rules)if(pattern.test(t))return data;
- return ["RESEARCH CONCEPT","✳","Scientific question","Research findings"];
-}
-// Clean baseline: no unverified image requests. Figure retrieval will be rebuilt after source validation.
 function card(p){
  const saved=!!state.saved[p.id];
  return '<article class="paper"><div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
@@ -177,7 +152,6 @@ async function fetchPapers(){
  }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
  finally{if(request===state.request){state.loading=false;render()}}
 }
-function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are shown only when a matching image is found in open-access Europe PMC full text; otherwise the card uses a journal-themed illustration.</p>';$("details").showModal()}
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;updateJournalCount()});
 $("journalSearch").addEventListener("input",renderJournals);
 $("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1};
@@ -190,6 +164,6 @@ $("sort").addEventListener("change",render);
 $("oaOnly").addEventListener("change",e=>{state.oaOnly=e.target.checked;render();});
 $("previous").onclick=()=>{if(state.page>1){state.page--;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
 $("next").onclick=()=>{if(state.hasMore){state.page++;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
-$("papers").addEventListener("click",e=>{const detail=e.target.closest("[data-detail]");if(detail){showDetail(detail.dataset.detail);return}const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
-$("closeDetails").onclick=()=>$("details").close();
+$("papers").addEventListener("click",e=>{const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
+
 const journalSidebar=document.querySelector(".sidebar");const journalPopup=$("journalDialog");if(journalSidebar.parentElement!==$("journalDialogBody"))$("journalDialogBody").appendChild(journalSidebar);const openJournalPopup=()=>{journalPopup.hidden=false;document.body.classList.add("journal-popup-open");renderJournals()};const closeJournalPopup=()=>{journalPopup.hidden=true;document.body.classList.remove("journal-popup-open")};$("openJournals").addEventListener("click",openJournalPopup);$("closeJournals").addEventListener("click",closeJournalPopup);$("applyJournals").addEventListener("click",()=>{closeJournalPopup();state.page=1;fetchPapers()});journalPopup.addEventListener("click",e=>{if(e.target===journalPopup)closeJournalPopup()});document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!journalPopup.hidden)closeJournalPopup()});renderJournals();render();fetchPapers();
