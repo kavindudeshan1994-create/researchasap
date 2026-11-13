@@ -44,3 +44,12 @@
 body.journal-popup-open{overflow:hidden}
 
 .paper-visual{margin-bottom:14px}.preprint-tag{display:inline-block;background:#fff1d6;color:#7d4c0a;border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700}
+
+/* Paper-specific, clearly labeled conceptual illustrations */
+.concept-figure{min-height:175px;display:flex;flex-direction:column;justify-content:space-between;padding:14px 16px;overflow:hidden}
+.concept-header{font-size:11px;letter-spacing:1.5px;font-weight:800;opacity:.75}
+.concept-flow{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0}
+.concept-node{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-width:105px;padding:9px;border:1px solid currentColor;border-radius:13px;background:rgba(255,255,255,.13);font-size:12px;font-weight:650;text-align:center}
+.concept-symbol{font-size:30px;line-height:1.1}.concept-arrow{font-size:26px;font-weight:700}.concept-figure .visual-caption{font-size:10px;opacity:.8}
+.concept-figure.has-graphic{padding:0}.concept-figure.has-graphic .concept-header,.concept-figure.has-graphic .concept-flow{display:none}
+@media(max-width:430px){.concept-node{min-width:90px}.concept-flow{gap:8px}}
