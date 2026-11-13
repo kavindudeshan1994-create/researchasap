@@ -68,15 +68,12 @@ if(!xmlResponse.ok)return null;
 const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
 if(xml.querySelector('parsererror'))return null;
 const figures=[...xml.getElementsByTagName('fig')];
-const caption=fig=>((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')).toLowerCase();
-const graphical=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract|graphical summary/.test(caption(fig)));
-const overview=figures.find(fig=>/overview|schematic|conceptual|workflow|experimental design|study design|mechanism/.test(caption(fig)));
-const candidates=[graphical,overview,figures[0],...figures].filter((f,i,a)=>f&&a.indexOf(f)===i);
+const candidates=figures;
 for(const fig of candidates){
  const graphic=fig.getElementsByTagName('graphic')[0]||fig.getElementsByTagName('inline-graphic')[0];
  const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
  if(!href||!/^[A-Za-z0-9_.-]+$/.test(href))continue;
- return {url:'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href),type:fig===graphical?'Graphical abstract':fig===overview?'Concept / overview figure':'Figure from paper'};
+ return {url:'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href),type:'First available figure from paper'};
 }
 return null;
 }
