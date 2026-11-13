@@ -22,19 +22,66 @@ function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("j
 function card(p){const saved=!!state.saved[p.id];return '<article class="paper"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
 function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;}
-async function fetchPapers(){const request=++state.request;state.loading=true;state.papers=[];state.hasMore=false;render();if(!state.selected.size){$("status").textContent="Select at least one journal to load papers.";state.loading=false;render();return}
+async function fetchPapers(){
+const request=++state.request;
+state.loading=true;state.papers=[];state.hasMore=false;render();
+if(!state.selected.size){$("status").textContent="Select at least one journal to load papers.";state.loading=false;render();return}
 $("status").textContent="Finding recent papers and matching journals…";
 try{
-// Resolve journal names to OpenAlex source IDs, cached in this browser.
-// Source-name lookup is verified against the returned name; ambiguous names are skipped.
-const selected=[...state.selected];const resolved=await Promise.all(selected.map(async name=>{const cache=load("rasap.sourceIds",{});if(cache[name])return cache[name];const u="https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10";const response=await fetch(u);if(!response.ok)throw Error("Journal lookup failed ("+response.status+")");const data=await response.json();const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");const found=(data.results||[]).find(x=>norm(x.display_name)===norm(name));if(found){cache[name]=found.id;localStorage.setItem("rasap.sourceIds",JSON.stringify(cache));return found.id}return null}));
-if(request!==state.request)return;const ids=[...new Set(resolved.filter(Boolean))];if(!ids.length)throw Error("None of the selected journals could be matched. Try selecting other journals.");
-// OpenAlex supports OR within a filter. Page size is intentionally modest.
-const filter="primary_location.source.id:"+ids.join("|")+",from_publication_date:"+new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+const selected=[...state.selected];
+const cache=load("rasap.sourceIds",{});
+const normalized=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+const resolved=new Array(selected.length).fill(null);
+let cursor=0,failedLookups=0;
+async function lookupWorker(){
+while(cursor<selected.length){
+const i=cursor++,name=selected[i];
+if(cache[name]){resolved[i]=cache[name];continue}
+try{
+const response=await fetch("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10");
+if(!response.ok)throw Error("Source lookup HTTP "+response.status);
+const data=await response.json();
+const found=(data.results||[]).find(x=>normalized(x.display_name)===normalized(name));
+if(found){resolved[i]=found.id;cache[name]=found.id}
+}catch(err){failedLookups++}
+}
+}
+await Promise.all(Array.from({length:Math.min(4,selected.length)},()=>lookupWorker()));
+if(request!==state.request)return;
+try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
+const ids=[...new Set(resolved.filter(Boolean))];
+if(!ids.length)throw Error(failedLookups?"Journal lookups were blocked or failed. Please wait a minute and refresh.":"No selected journals could be matched in OpenAlex.");
+// Query small OR-filter batches to avoid API filter-size limits.
+// A failed batch must not erase successful results from other batches.
+const batches=[];for(let i=0;i<ids.length;i+=15)batches.push(ids.slice(i,i+15));
+const fromDate=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+let nextBatch=0;const results=new Array(batches.length);let failedBatches=0;
+async function paperWorker(){
+while(nextBatch<batches.length){
+const i=nextBatch++;
+try{
+const filter="primary_location.source.id:"+batches[i].join("|")+",from_publication_date:"+fromDate;
 const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=24&page="+state.page;
-const response=await fetch(url);if(!response.ok)throw Error("Paper request failed ("+response.status+")");const data=await response.json();if(request!==state.request)return;
-state.papers=(data.results||[]).map(normalize);state.hasMore=(data.meta?.count||0)>state.page*24;$("updated").textContent="Updated "+new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});$("status").textContent=state.papers.length?state.papers.length+" papers loaded · Last 120 days · Abstract-derived previews":"No recent papers in the selected journals.";
-}catch(err){if(request===state.request)$("status").textContent="Unable to load papers: "+err.message+". Check your connection or try fewer journals."}finally{if(request===state.request){state.loading=false;render()}}}
+const response=await fetch(url);
+if(!response.ok)throw Error("Works HTTP "+response.status);
+results[i]=await response.json();
+}catch(err){failedBatches++;results[i]=null}
+}
+}
+await Promise.all(Array.from({length:Math.min(3,batches.length)},()=>paperWorker()));
+if(request!==state.request)return;
+const successful=results.filter(Boolean);
+if(!successful.length)throw Error("All paper requests failed. OpenAlex may be rate limiting requests; try refreshing shortly.");
+const unique=new Map();
+for(const data of successful)for(const work of data.results||[])if(!unique.has(work.id))unique.set(work.id,normalize(work));
+state.papers=[...unique.values()].sort((a,b)=>b.date.localeCompare(a.date));
+state.hasMore=successful.some(data=>(data.meta?.count||0)>state.page*24);
+$("updated").textContent="Updated "+new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+const warning=failedLookups||failedBatches?" · Partial results ("+(failedLookups+failedBatches)+" requests failed)":"";
+$("status").textContent=state.papers.length?state.papers.length+" papers loaded · Last 120 days · Abstract-derived previews"+warning:"No recent papers returned"+warning;
+}catch(err){if(request===state.request)$("status").textContent="Unable to load papers: "+err.message}
+finally{if(request===state.request){state.loading=false;render()}}
+}
 function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are not included unless reliable image rights and sources can be established.</p>';$("details").showModal()}
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;fetchPapers()});
 $("journalSearch").addEventListener("input",renderJournals);
