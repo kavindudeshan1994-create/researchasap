@@ -19,7 +19,7 @@
 
 /* Journal selector is a popup, not a permanent sidebar. */
 .shell{display:block;max-width:1250px}
-.sidebar{display:none}
+.sidebar{display:block}
 .journal-open{background:#e9f0ff;color:#2457dc;white-space:nowrap}
 .journal-open span{font-size:12px;opacity:.8;margin-left:6px}
 .journal-dialog{width:min(660px,calc(100% - 24px));max-height:min(85vh,780px);padding:0;overflow:hidden}
