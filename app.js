@@ -35,10 +35,27 @@ if(/cell|biolog|protein|embo|membrane|biochem/.test(j))return ["bio","✺","LIFE
 if(/material|nano|physical|photon|science/.test(j))return ["materials","◇","MATERIALS & SCIENCE"];
 return ["general","✳","RESEARCH"];
 }
-function graphicMarkup(p){
-const [theme,symbol,category]=journalTheme(p.journal);
-return '<div class="paper-visual '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="visual-pattern" aria-hidden="true">'+symbol+'</div><div class="visual-text"><span>'+escapeHTML(category)+'</span><strong>'+escapeHTML(p.journal)+'</strong></div><span class="visual-caption">Illustration · original graphical abstract unavailable</span></div>';
+function conceptFor(p){
+ const t=(p.title+" "+(p.abstract||"")).toLowerCase();
+ const rules=[
+  [/membrane|lipid|bilayer|vesicle|cell surface/,["MEMBRANE","◉","Lipid bilayer","Cell interface"]],
+  [/photo|laser|light|fluorescen|imaging|microscop|optical/,["LIGHT & IMAGING","✺","Light excitation","Optical response"]],
+  [/protein|enzyme|receptor|peptide|antibody/,["MOLECULAR BIOLOGY","⬡","Molecular target","Biological activity"]],
+  [/cancer|tumou?r|therapy|therapeutic|drug/,["BIOMEDICINE","✚","Therapeutic approach","Biological outcome"]],
+  [/nanoparticle|nanomaterial|nanostructure|quantum dot/,["NANOSCIENCE","◇","Nanoscale structure","Material function"]],
+  [/synthesi|cataly|reaction|organic|molecule|chemical/,["CHEMISTRY","⬡","Molecular design","Chemical transformation"]],
+  [/gene|dna|rna|genom|crispr/,["GENETICS","⌁","Genetic system","Molecular response"]],
+  [/temperature|thermal|heat|photothermal/,["THERMAL SCIENCE","☀","Energy input","Thermal response"]]
+ ];
+ for(const [pattern,data] of rules)if(pattern.test(t))return data;
+ return ["RESEARCH CONCEPT","✳","Scientific question","Research findings"];
 }
+function graphicMarkup(p){
+ const [theme]=journalTheme(p.journal);
+ const [category,symbol,left,right]=conceptFor(p);
+ return '<div class="paper-visual concept-figure '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="concept-header">'+escapeHTML(category)+'</div><div class="concept-flow"><div class="concept-node"><span class="concept-symbol">'+symbol+'</span><span>'+escapeHTML(left)+'</span></div><span class="concept-arrow" aria-hidden="true">→</span><div class="concept-node"><span class="concept-symbol">✦</span><span>'+escapeHTML(right)+'</span></div></div><span class="visual-caption">AI-free topic illustration · not the paper’s graphical abstract</span></div>';
+}
+
 async function lookupGraphic(p){
 if(!p.doi)return null;
 const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
