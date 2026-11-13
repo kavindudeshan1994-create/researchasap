@@ -70,17 +70,21 @@ if(!xmlResponse.ok)return null;
 const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
 if(xml.querySelector('parsererror'))return null;
 const figures=[...xml.getElementsByTagName('fig')];
-const figure=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract|graphical summary/i.test((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')));
-
-if(!figure)return null;
-const graphic=figure.getElementsByTagName('graphic')[0];
-const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
-if(!href||!/^[-\w.]+$/.test(href))return null;
-return 'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href);
+const caption=fig=>((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')).toLowerCase();
+const graphical=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract|graphical summary/.test(caption(fig)));
+const overview=figures.find(fig=>/overview|schematic|conceptual|workflow|experimental design|study design|mechanism/.test(caption(fig)));
+const candidates=[graphical,overview,figures[0],...figures].filter((f,i,a)=>f&&a.indexOf(f)===i);
+for(const fig of candidates){
+ const graphic=fig.getElementsByTagName('graphic')[0]||fig.getElementsByTagName('inline-graphic')[0];
+ const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
+ if(!href||!/^[-\\w.]+$/.test(href))continue;
+ return {url:'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href),type:fig===graphical?'Graphical abstract':fig===overview?'Concept / overview figure':'Figure from paper'};
+}
+return null;
 }
 function queueGraphics(){
 const cards=[...document.querySelectorAll('[data-graphic]')];
-for(const card of cards.slice(0,16)){
+for(const card of cards.slice(0,20)){
 const id=card.dataset.graphic;
 const p=state.papers.find(p=>p.id===id)||state.saved[id];
 if(!p)continue;
@@ -103,16 +107,16 @@ applyGraphic(p.id,url);
 }
 }finally{graphicWorkers--}
 }
-function applyGraphic(id,url){
-if(!url)return;
+function applyGraphic(id,result){
+if(!result)return;
 for(const card of document.querySelectorAll('[data-graphic]')){
 if(card.dataset.graphic!==id||card.querySelector('img'))continue;
 const img=document.createElement('img');
-img.loading='lazy';img.alt='Original graphical abstract (open-access article)';
+img.loading='lazy';img.alt=result.type+' from the original paper';
 img.referrerPolicy='no-referrer';
-img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent='Original graphical abstract · Europe PMC'};
+img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+' · Europe PMC'};
 img.onerror=()=>{graphicCache.set(id,null);img.remove()};
-img.src=url;
+img.src=result.url;
 }
 }
 
