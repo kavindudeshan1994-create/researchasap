@@ -60,7 +60,7 @@ return 'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+
 }
 function queueGraphics(){
 const cards=[...document.querySelectorAll('[data-graphic]')];
-for(const card of cards){
+for(const card of cards.slice(0,8)){
 const id=card.dataset.graphic;
 const p=state.papers.find(p=>p.id===id)||state.saved[id];
 if(!p)continue;
@@ -99,65 +99,88 @@ img.src=url;
 function card(p){const saved=!!state.saved[p.id];return '<article class="paper"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
 function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
+
+async function timedJSON(url,ms=9000){
+ const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),ms);
+ try{const r=await fetch(url,{signal:ctrl.signal});if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
+ finally{clearTimeout(timer)}
+}
+async function fetchCrossref(names){
+ const found=new Map();
+ const date=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+ const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+ const results=await Promise.allSettled(names.slice(0,4).map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+date+"&rows=12&sort=published&order=desc",9000)));
+ results.forEach((result,i)=>{
+  if(result.status!=="fulfilled")return;
+  for(const w of result.value.message?.items||[]){
+   if(!w.DOI||norm(w["container-title"]?.[0]||"")!==norm(names[i]))continue;
+   const d=w.published?.["date-parts"]?.[0]||[];
+   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date:d.map((x,i)=>i?String(x).padStart(2,"0"):x).join("-"),journal:w["container-title"]?.[0]||"",authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
+   found.set(p.id,p);
+  }
+ }
+ });
+ return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
+}
 async function fetchPapers(){
-const request=++state.request;
-state.loading=true;state.papers=[];state.hasMore=false;render();
-if(!state.selected.size){$("status").textContent="Select at least one journal to load papers.";state.loading=false;render();return}
-$("status").textContent="Finding recent papers and matching journals…";
-try{
-const selected=[...state.selected];
-const cache=load("rasap.sourceIds",{});
-const normalized=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
-const resolved=new Array(selected.length).fill(null);
-let cursor=0,failedLookups=0;
-async function lookupWorker(){
-while(cursor<selected.length){
-const i=cursor++,name=selected[i];
-if(cache[name]){resolved[i]=cache[name];continue}
-try{
-const response=await fetch("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10");
-if(!response.ok)throw Error("Source lookup HTTP "+response.status);
-const data=await response.json();
-const found=(data.results||[]).find(x=>normalized(x.display_name)===normalized(name));
-if(found){resolved[i]=found.id;cache[name]=found.id}
-}catch(err){failedLookups++}
-}
-}
-await Promise.all(Array.from({length:Math.min(4,selected.length)},()=>lookupWorker()));
-if(request!==state.request)return;
-try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
-const ids=[...new Set(resolved.filter(Boolean))];
-if(!ids.length)throw Error(failedLookups?"Journal lookups were blocked or failed. Please wait a minute and refresh.":"No selected journals could be matched in OpenAlex.");
-// Query small OR-filter batches to avoid API filter-size limits.
-// A failed batch must not erase successful results from other batches.
-const batches=[];for(let i=0;i<ids.length;i+=15)batches.push(ids.slice(i,i+15));
-const fromDate=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
-let nextBatch=0;const results=new Array(batches.length);let failedBatches=0;
-async function paperWorker(){
-while(nextBatch<batches.length){
-const i=nextBatch++;
-try{
-const filter="primary_location.source.id:"+batches[i].join("|")+",from_publication_date:"+fromDate;
-const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=24&page="+state.page;
-const response=await fetch(url);
-if(!response.ok)throw Error("Works HTTP "+response.status);
-results[i]=await response.json();
-}catch(err){failedBatches++;results[i]=null}
-}
-}
-await Promise.all(Array.from({length:Math.min(3,batches.length)},()=>paperWorker()));
-if(request!==state.request)return;
-const successful=results.filter(Boolean);
-if(!successful.length)throw Error("All paper requests failed. OpenAlex may be rate limiting requests; try refreshing shortly.");
-const unique=new Map();
-for(const data of successful)for(const work of data.results||[])if(!unique.has(work.id))unique.set(work.id,normalize(work));
-state.papers=[...unique.values()].sort((a,b)=>b.date.localeCompare(a.date));
-state.hasMore=successful.some(data=>(data.meta?.count||0)>state.page*24);
-$("updated").textContent="Updated "+new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-const warning=failedLookups||failedBatches?" · Partial results ("+(failedLookups+failedBatches)+" requests failed)":"";
-$("status").textContent=state.papers.length?state.papers.length+" papers loaded · Last 120 days · Abstract-derived previews"+warning:"No recent papers returned"+warning;
-}catch(err){if(request===state.request)$("status").textContent="Unable to load papers: "+err.message}
-finally{if(request===state.request){state.loading=false;render()}}
+ const request=++state.request;
+ state.loading=true;state.hasMore=false;
+ if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
+ $("status").textContent="Updating papers…";render();
+ const selected=[...state.selected],cache=load("rasap.sourceIds",{}),ids=[];
+ let cursor=0;let failures=0;let papers=[];
+ try{
+  const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
+  async function sourceWorker(){
+   while(cursor<selected.length){
+    if(request!==state.request)return;
+    const name=selected[cursor++];
+    if(cache[name]){ids.push(cache[name]);continue}
+    try{
+     const data=await timedJSON("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10",7000);
+     const match=(data.results||[]).find(x=>norm(x.display_name)===norm(name));
+     if(match){cache[name]=match.id;ids.push(match.id)}
+    }catch{failures++}
+   }
+  }
+  await Promise.all(Array.from({length:Math.min(3,selected.length)},()=>sourceWorker()));
+  if(request!==state.request)return;
+  try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
+  const unique=[...new Set(ids)],groups=[];
+  for(let i=0;i<unique.length;i+=12)groups.push(unique.slice(i,i+12));
+  let index=0;const responses=[];
+  const date=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+  async function worksWorker(){
+   while(index<groups.length){
+    if(request!==state.request)return;
+    const group=groups[index++];
+    try{
+     const filter="primary_location.source.id:"+group.join("|")+",from_publication_date:"+date;
+     const url="https://api.openalex.org/works?filter="+encodeURIComponent(filter)+"&sort=publication_date:desc&per-page=24&page="+state.page;
+     responses.push(await timedJSON(url,10000));
+    }catch{failures++}
+   }
+  }
+  await Promise.all(Array.from({length:Math.min(2,groups.length)},()=>worksWorker()));
+  if(request!==state.request)return;
+  const found=new Map();
+  for(const data of responses)for(const w of data.results||[])found.set(w.id,normalize(w));
+  papers=[...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
+  state.hasMore=responses.some(x=>(x.meta?.count||0)>state.page*24);
+ }catch{failures++}
+ if(request!==state.request)return;
+ try{
+  if(!papers.length){
+   $("status").textContent="Trying backup paper source…";render();
+   papers=await fetchCrossref(selected);
+   state.hasMore=false;
+   if(request!==state.request)return;
+   $("status").textContent=papers.length?"Showing Crossref backup papers from up to 4 journals.":"No papers returned. Try fewer journals or refresh later.";
+  }else $("status").textContent="Showing "+papers.length+" recent papers"+(failures?" · Some requests failed":"");
+  state.papers=papers;
+  $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+ }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
+ finally{if(request===state.request){state.loading=false;render()}}
 }
 function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are shown only when a matching image is found in open-access Europe PMC full text; otherwise the card uses a journal-themed illustration.</p>';$("details").showModal()}
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;fetchPapers()});
