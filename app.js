@@ -72,12 +72,22 @@ if(!xmlResponse.ok)return null;
 const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
 if(xml.querySelector('parsererror'))return null;
 const figures=[...xml.getElementsByTagName('fig')];
-const candidates=figures;
-for(const fig of candidates){
+const ranked=figures.map((fig,index)=>{
+ const label=fig.getElementsByTagName('label')[0]?.textContent?.trim()||'';
+ const caption=fig.getElementsByTagName('caption')[0]?.textContent?.trim()||'';
+ const isFirst=/^(fig(?:ure)?\\s*[.:-]?\\s*1)\\b/i.test(label);
+ const isGraphical=/graphical abstract|visual abstract|table of contents graphic|toc graphic/i.test(label+' '+caption);
+ return {fig,index,label,isFirst,isGraphical};
+}).sort((a,b)=>Number(b.isGraphical)-Number(a.isGraphical)||Number(b.isFirst)-Number(a.isFirst)||a.index-b.index);
+for(const itemFig of ranked){
+ const fig=itemFig.fig;
  const graphic=fig.getElementsByTagName('graphic')[0]||fig.getElementsByTagName('inline-graphic')[0];
- const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
+ const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href')||graphic?.getAttribute('href');
  if(!href||!/^[A-Za-z0-9_.-]+$/.test(href))continue;
- return {url:'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href),type:'First available figure from paper'};
+ const root='https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/';
+ const candidates=[href];
+ if(!/\\.(?:jpe?g|png|gif|webp|tiff?)$/i.test(href))candidates.push(href+'.jpg',href+'.png',href+'.gif');
+ return {url:root+encodeURIComponent(candidates[0]),alternates:candidates.slice(1).map(name=>root+encodeURIComponent(name)),type:itemFig.isGraphical?'Graphical abstract':itemFig.isFirst?'Figure 1':'First available figure'};
 }
 return null;
 }
@@ -114,7 +124,7 @@ const img=document.createElement('img');
 img.loading='lazy';img.alt=result.type+' from the original paper';
 img.referrerPolicy='no-referrer';
 img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+(result.type==='Publisher image'?' · Publisher':' · Europe PMC');};
-img.onerror=()=>{graphicCache.set(id,null);img.remove()};
+let fallbackIndex=0;img.onerror=()=>{if(fallbackIndex<(result.alternates||[]).length){img.src=result.alternates[fallbackIndex++];return;}graphicCache.set(id,null);img.remove()};
 img.src=result.url;
 }
 }
