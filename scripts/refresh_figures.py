@@ -58,7 +58,7 @@ def get_image(doi):
  return None
 def main():
  ROOT.mkdir(exist_ok=True);IMAGES.mkdir(parents=True,exist_ok=True)
- records=json.loads(OUT.read_text()) if OUT.exists() else {}
+ records=json.loads(OUT.read_text().replace("\\\\n","\\n")) if OUT.exists() else {}
  dois=list(dict.fromkeys(["10.1021/acsnano.6c16642"]+latest_dois()))[:35]
  for doi in dois:
   if records.get(doi,{}).get("url","").startswith("./images/"):continue
