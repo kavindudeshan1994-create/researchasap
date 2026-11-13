@@ -3,7 +3,7 @@
 import json, re, urllib.request, urllib.parse, html, pathlib, datetime
 from html.parser import HTMLParser
 OUT=pathlib.Path("data/figures.json")
-TEST=["10.1021/acs.joc.6c01897"]
+TEST=["10.1021/acsnano.6c16642","10.1021/acs.joc.6c01897"]
 class Meta(HTMLParser):
  def __init__(self): super().__init__(); self.images=[]
  def handle_starttag(self,tag,attrs):
