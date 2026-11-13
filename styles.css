@@ -56,3 +56,21 @@ body.journal-popup-open{overflow:hidden}
 .paper-figure-one img{width:100%;max-height:320px;object-fit:contain}
 .paper-figure-one small{font-size:10px;color:#64748b}
 @media(max-width:680px){.paper-figure-one{border-right:0;border-bottom:1px solid #e0e6f0}}
+
+/* Desktop article feed: one readable article per row, not three narrow two-column cards. */
+.papers{grid-template-columns:minmax(0,1fr);max-width:1100px;margin-inline:auto;gap:18px}
+.paper.paper-with-concept{grid-template-columns:minmax(0,1fr);min-width:0}
+.paper-with-concept .paper-copy{padding:22px 26px;min-width:0}
+.paper-with-concept .paper-copy h3{font-size:19px;line-height:1.4;overflow-wrap:anywhere;margin:8px 0}
+.paper-with-concept .paper-copy .authors{line-height:1.55;margin:8px 0}
+.paper-with-concept .paper-copy .paper-abstract{font-size:14px;line-height:1.7;margin:12px 0 18px;overflow-wrap:anywhere}
+.paper-with-concept .paper-copy .paper-actions{margin-top:12px}
+.paper-figure-one:not(.has-figure){display:none}
+.paper.paper-with-concept:has(.paper-figure-one.has-figure){grid-template-columns:minmax(200px,30%) minmax(0,1fr)}
+.paper-figure-one.has-figure{min-height:180px}
+@media(max-width:680px){
+ .papers{grid-template-columns:minmax(0,1fr)}
+ .paper.paper-with-concept:has(.paper-figure-one.has-figure){grid-template-columns:minmax(0,1fr)}
+ .paper-with-concept .paper-copy{padding:18px}
+ .paper-with-concept .paper-copy h3{font-size:17px}
+}
