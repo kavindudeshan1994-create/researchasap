@@ -47,12 +47,9 @@ function conceptFor(p){
  return ["RESEARCH CONCEPT","✳","Scientific question","Research findings"];
 }
 // Clean baseline: no unverified image requests. Figure retrieval will be rebuilt after source validation.
-function graphicMarkup(p){
- return '<div class="paper-visual paper-figure"><div class="figure-empty"><span class="figure-icon">▧</span><span>Scientific figure pending verification</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View original paper ↗</a></div><span class="visual-caption">Publisher figure / Figure 1</span></div>';
-}
 function card(p){
  const saved=!!state.saved[p.id];
- return '<article class="paper paper-horizontal">'+graphicMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+ return '<article class="paper"><div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
