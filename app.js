@@ -24,6 +24,8 @@ function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("j
 
 // Graphical abstracts: only attempt images explicitly identified as graphical abstracts
 // in open-access Europe PMC full-text XML. No arbitrary figures or publisher scraping.
+let publisherFigures={};
+fetch('./data/figures.json?v=20261113q').then(r=>r.ok?r.json():{}).then(data=>{publisherFigures=data||{};graphicCache.clear();queueGraphics()}).catch(()=>{});
 const graphicCache=new Map();
 const graphicPending=new Set();
 const graphicQueue=[];
@@ -56,6 +58,8 @@ function graphicMarkup(p){
 
 async function lookupGraphic(p){
 if(!p.doi)return null;
+const key=p.doi.substring(p.doi.lastIndexOf('doi.org/')+8).toLowerCase();
+if(publisherFigures[key]?.url)return {url:publisherFigures[key].url,type:publisherFigures[key].type||'Publisher image'};
 const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
 if(!doi)return null;
 const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
@@ -109,7 +113,7 @@ if(card.dataset.graphic!==id||card.querySelector('img'))continue;
 const img=document.createElement('img');
 img.loading='lazy';img.alt=result.type+' from the original paper';
 img.referrerPolicy='no-referrer';
-img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+' · Europe PMC';};
+img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+(result.type==='Publisher image'?' · Publisher':' · Europe PMC');};
 img.onerror=()=>{graphicCache.set(id,null);img.remove()};
 img.src=result.url;
 }
