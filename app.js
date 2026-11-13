@@ -6,7 +6,9 @@ const $=id=>document.getElementById(id);
 const load=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback}catch{return fallback}};
 const previousSelection=load("rasap.journals",null);
 const selectionNeedsMigration=!Array.isArray(previousSelection)||(previousSelection.length===1&&previousSelection[0]==="ACS Nano");
-const initialSelection=selectionNeedsMigration?DEFAULT:(Array.isArray(previousSelection)?previousSelection:DEFAULT);
+const resetToMixed=!localStorage.getItem("rasap.mixedFeedFix20261113");
+const initialSelection=resetToMixed?DEFAULT:(selectionNeedsMigration?DEFAULT:(Array.isArray(previousSelection)?previousSelection:DEFAULT));
+if(resetToMixed){localStorage.setItem("rasap.journals",JSON.stringify(DEFAULT));localStorage.setItem("rasap.mixedFeedFix20261113","1")}
 if(selectionNeedsMigration){localStorage.setItem("rasap.journals",JSON.stringify(initialSelection))}
 const state={selected:new Set(initialSelection.filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -211,7 +213,8 @@ async function fetchPapers(){
   const merged=new Map();
   for(const p of [...crossrefPapers,...preprintPapers,...papers]){const key=(p.doi||p.id).toLowerCase();const prior=merged.get(key);if(!prior||(!prior.abstract&&p.abstract))merged.set(key,p)}
   state.papers=[...merged.values()].sort(comparePublished);
-  $("status").textContent="Showing "+state.papers.length+" mixed papers · Last 30 days · "+selected.length+" journals selected"+(failures?" · Some requests failed":"");
+  const journalBreakdown=[...new Set(state.papers.map(p=>p.journal))];
+  $("status").textContent="Showing "+state.papers.length+" papers from "+journalBreakdown.length+" journals · Last 30 days · "+selected.length+" selected"+(failures?" · Some requests failed":"")+(journalBreakdown.length===1?" · Only "+journalBreakdown[0]+" returned papers":"");
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
  }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
  finally{if(request===state.request){state.loading=false;render()}}
