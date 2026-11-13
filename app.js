@@ -5,6 +5,7 @@ const GROUPS={
 "Chemical biology & biochemistry":["Nature Chemical Biology","ACS Chemical Biology","Cell Chemical Biology","RSC Chemical Biology","ChemBioChem","Bioconjugate Chemistry","Journal of Medicinal Chemistry","Biochemistry","Journal of Biological Chemistry","Molecular Cell","Nature Structural & Molecular Biology","The EMBO Journal","Protein Science","Journal of Molecular Biology"],
 "Cell & membrane biology":["Nature Cell Biology","Journal of Cell Biology","Molecular Biology of the Cell","Current Biology","Cell Reports","Traffic","Biochimica et Biophysica Acta (BBA) - Biomembranes","Journal of Membrane Biology","Journal of General Physiology"],
 "Imaging & analytics":["Nature Methods","Analytical Chemistry","ACS Sensors","Biosensors and Bioelectronics","Lab on a Chip"],
+"Preprints (not peer-reviewed)":["bioRxiv","medRxiv"],
 "Materials & nanoscience":["Nature Materials","Nature Nanotechnology","Advanced Materials","Advanced Functional Materials","ACS Nano","Nano Letters","Small","Advanced Science","ACS Applied Materials & Interfaces","Materials Horizons","Nanoscale Horizons","Nanoscale","Journal of Materials Chemistry B","Biomaterials Science","The Journal of Physical Chemistry B","The Journal of Physical Chemistry C","The Journal of Physical Chemistry Letters","Nature Photonics","Nature Biomedical Engineering","Nature Biotechnology"]
 };
 const JOURNALS=[...new Set(Object.values(GROUPS).flat())];
@@ -39,7 +40,7 @@ const [theme,symbol,category]=journalTheme(p.journal);
 return '<div class="paper-visual '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="visual-pattern" aria-hidden="true">'+symbol+'</div><div class="visual-text"><span>'+escapeHTML(category)+'</span><strong>'+escapeHTML(p.journal)+'</strong></div><span class="visual-caption">Journal design · not a graphical abstract</span></div>';
 }
 async function lookupGraphic(p){
-if(!p.doi||!p.openAccess)return null;
+if(!p.doi)return null;
 const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
 if(!doi)return null;
 const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
@@ -66,7 +67,7 @@ const id=card.dataset.graphic;
 const p=state.papers.find(p=>p.id===id)||state.saved[id];
 if(!p)continue;
 if(graphicCache.has(id)){applyGraphic(id,graphicCache.get(id));continue}
-if(!p.openAccess||!p.doi||graphicPending.has(id))continue;
+if(!p.doi||graphicPending.has(id))continue;
 graphicPending.add(id);graphicQueue.push(p);
 }
 while(graphicWorkers<2&&graphicQueue.length)runGraphicWorker();
@@ -97,7 +98,7 @@ img.src=url;
 }
 }
 
-function card(p){const saved=!!state.saved[p.id];return '<article class="paper"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
+function card(p){const saved=!!state.saved[p.id];return '<article class="paper">'+graphicMarkup(p)+'<div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
 function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
 
@@ -130,23 +131,38 @@ async function fetchCrossref(names,cutoff){
  });
  return {papers:[...found.values()].sort((a,b)=>b.date.localeCompare(a.date)),errors,checked:chosen.length};
 }
+async function fetchPreprints(names,cutoff){
+ const sources=names.filter(n=>n==="bioRxiv"||n==="medRxiv");
+ const found=new Map();
+ const results=await Promise.allSettled(sources.map(n=>timedJSON("https://www.ebi.ac.uk/europepmc/webservices/rest/search?query="+encodeURIComponent('JOURNAL:"'+n+'" AND FIRST_PDATE:['+cutoff+' TO *]')+"&format=json&pageSize=100&sort=FIRST_PDATE_D",12000)));
+ results.forEach((r,i)=>{
+  if(r.status!=="fulfilled")return;
+  for(const w of r.value.resultList?.result||[]){
+   const journal=sources[i];
+   const doi=w.doi||"";
+   const id=doi?"https://doi.org/"+doi:"https://europepmc.org/article/"+(w.source||"PPR")+"/"+w.id;
+   found.set(id,{id,title:plain(w.title||"Untitled preprint"),date:w.firstPublicationDate||w.firstIndexDate||"",journal,authors:w.authorString||"",abstract:plain(w.abstractText||""),doi:doi?"https://doi.org/"+doi:"",url:doi?"https://doi.org/"+doi:"https://europepmc.org/article/"+(w.source||"PPR")+"/"+w.id,openAccess:true,preprint:true});
+  }
+ });
+ return [...found.values()].sort((a,b)=>b.date.localeCompare(a.date));
+}
 async function fetchPapers(){
  const request=++state.request;
  state.loading=true;state.hasMore=false;
  if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
  $("status").textContent="Checking recent papers through Crossref…";render();
- const selected=[...state.selected],cache=load("rasap.sourceIds",{}),ids=[];
+ const selected=[...state.selected],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
  const shortWindow=selected.length>5;
  const cutoff=new Date(Date.now()-(shortWindow?48*3600000:365*86400000)).toISOString().slice(0,10);
  const windowLabel=shortWindow?"Last 48 hours":"Last 1 year";
  try{
-  const backup=await fetchCrossref(selected,cutoff);
+  const [backup,preprints]=await Promise.all([journalNames.length?fetchCrossref(journalNames,cutoff):Promise.resolve({papers:[],errors:0,checked:0}),preprintNames.length?fetchPreprints(preprintNames,cutoff):Promise.resolve([])]);
   if(request!==state.request)return;
-  if(backup.papers.length){
-   state.papers=backup.papers;
+  if(backup.papers.length||preprints.length){
+   state.papers=[...backup.papers,...preprints].sort((a,b)=>b.date.localeCompare(a.date));
    state.hasMore=false;
    state.loading=false;
-   $("status").textContent="Showing "+backup.papers.length+" Crossref papers · "+windowLabel+" · "+backup.checked+" journals checked"+(backup.errors?" · Some journal requests failed":"");
+   $("status").textContent="Showing "+state.papers.length+" papers · "+windowLabel+" · "+backup.checked+" journals checked"+(backup.errors?" · Some journal requests failed":"");
    $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
    render();return;
   }
@@ -157,9 +173,9 @@ async function fetchPapers(){
  try{
   const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
   async function sourceWorker(){
-   while(cursor<selected.length){
+   while(cursor<journalNames.length){
     if(request!==state.request)return;
-    const name=selected[cursor++];
+    const name=journalNames[cursor++];
     if(cache[name]){ids.push(cache[name]);continue}
     try{
      const data=await timedJSON("https://api.openalex.org/sources?search="+encodeURIComponent(name)+"&per-page=10",7000);
@@ -168,7 +184,7 @@ async function fetchPapers(){
     }catch{failures++}
    }
   }
-  await Promise.all(Array.from({length:Math.min(3,selected.length)},()=>sourceWorker()));
+  await Promise.all(Array.from({length:Math.min(3,journalNames.length)},()=>sourceWorker()));
   if(request!==state.request)return;
   try{localStorage.setItem("rasap.sourceIds",JSON.stringify(cache))}catch{}
   const unique=[...new Set(ids)],groups=[];
@@ -197,7 +213,7 @@ async function fetchPapers(){
  try{
   if(!papers.length){
    $("status").textContent="Trying backup paper source…";render();
-   const fallback=await fetchCrossref(selected,cutoff);
+   const fallback=await fetchCrossref(journalNames,cutoff);
    papers=fallback.papers;
    state.hasMore=false;
    if(request!==state.request)return;
