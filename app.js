@@ -22,9 +22,23 @@ const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publi
 function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
 
+function conceptVisual(p){
+ const t=(p.title||'').toLowerCase();
+ const themes=[
+  [/membrane|lipid|vesicle|bilayer/,['MEMBRANE BIOLOGY','◉','Membrane system','Cellular response']],
+  [/photo|laser|light|fluorescen|imaging|microscop/,['OPTICAL SCIENCE','✺','Light / imaging','Measured response']],
+  [/protein|enzyme|receptor|peptide/,['CHEMICAL BIOLOGY','⬡','Molecular target','Biological activity']],
+  [/nanoparticle|nanomaterial|nanostructure/,['NANOSCIENCE','◇','Nanomaterial','Material properties']],
+  [/synthesi|cataly|reaction|organic|molecule|chemical/,['CHEMISTRY','⬡','Chemical design','Reaction / analysis']],
+  [/gene|dna|rna|genom/,['MOLECULAR BIOLOGY','⌁','Genetic system','Molecular response']],
+  [/temperature|thermal|heat/,['THERMAL SCIENCE','☀','Energy input','Thermal response']]
+ ];
+ const x=themes.find(([re])=>re.test(t))?.[1]||['RESEARCH','✳','Research question','Experimental findings'];
+ return '<div class="paper-concept" role="img" aria-label="Illustrative research concept, not an original publication figure"><div class="concept-heading">'+escapeHTML(x[0])+'</div><div class="concept-mark">'+x[1]+'</div><div class="concept-steps"><span>'+escapeHTML(x[2])+'</span><b aria-hidden="true">→</b><span>'+escapeHTML(x[3])+'</span></div><div class="concept-disclaimer">Concept illustration · not a publication figure</div></div>';
+}
 function card(p){
  const saved=!!state.saved[p.id];
- return '<article class="paper"><div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+ return '<article class="paper paper-with-concept">'+conceptVisual(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
