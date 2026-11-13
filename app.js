@@ -22,27 +22,53 @@ const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publi
 function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
 
-function conceptVisual(p){
- const t=(p.title||'').toLowerCase();
- const themes=[
-  [/membrane|lipid|vesicle|bilayer/,['MEMBRANE BIOLOGY','◉','Membrane system','Cellular response']],
-  [/photo|laser|light|fluorescen|imaging|microscop/,['OPTICAL SCIENCE','✺','Light / imaging','Measured response']],
-  [/protein|enzyme|receptor|peptide/,['CHEMICAL BIOLOGY','⬡','Molecular target','Biological activity']],
-  [/nanoparticle|nanomaterial|nanostructure/,['NANOSCIENCE','◇','Nanomaterial','Material properties']],
-  [/synthesi|cataly|reaction|organic|molecule|chemical/,['CHEMISTRY','⬡','Chemical design','Reaction / analysis']],
-  [/gene|dna|rna|genom/,['MOLECULAR BIOLOGY','⌁','Genetic system','Molecular response']],
-  [/temperature|thermal|heat/,['THERMAL SCIENCE','☀','Energy input','Thermal response']]
- ];
- const x=themes.find(([re])=>re.test(t))?.[1]||['RESEARCH','✳','Research question','Experimental findings'];
- return '<div class="paper-concept" role="img" aria-label="Illustrative research concept, not an original publication figure"><div class="concept-heading">'+escapeHTML(x[0])+'</div><div class="concept-mark">'+x[1]+'</div><div class="concept-steps"><span>'+escapeHTML(x[2])+'</span><b aria-hidden="true">→</b><span>'+escapeHTML(x[3])+'</span></div><div class="concept-disclaimer">Concept illustration · not a publication figure</div></div>';
+const figureCache=new Map();
+async function findFigureOne(p){
+ if(!p.doi)return null;
+ const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
+ try{
+  const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
+  const res=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/search?query='+encodeURIComponent(query)+'&format=json&pageSize=1');
+  if(!res.ok)return null;
+  const item=(await res.json()).resultList?.result?.[0];
+  if(!item?.pmcid)return null;
+  const xmlRes=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/'+encodeURIComponent(item.pmcid)+'/fullTextXML');
+  if(!xmlRes.ok)return null;
+  const doc=new DOMParser().parseFromString(await xmlRes.text(),'text/xml');
+  if(doc.querySelector('parsererror'))return null;
+  const figures=Array.from(doc.getElementsByTagName('fig'));
+  const fig=figures.find(f=>/^(?:fig|figure)[\\s._-]*1$/i.test(f.getAttribute('id')||''))||figures[0];
+  const g=fig?.getElementsByTagName('graphic')[0];
+  const href=g?.getAttribute('xlink:href')||g?.getAttributeNS('http://www.w3.org/1999/xlink','href');
+  if(!href||href.includes('..')||href.includes('/'))return null;
+  return 'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href);
+ }catch{return null}
+}
+function figureMarkup(p){
+ return '<div class="paper-figure-one" data-figure-doi="'+escapeHTML(p.doi||'')+'"><span>Figure 1 unavailable in public full-text metadata.</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View original figures ↗</a></div>';
+}
+function loadFigures(){
+ document.querySelectorAll('[data-figure-doi]').forEach(async el=>{
+  const doi=el.dataset.figureDoi;
+  const p=state.papers.find(x=>x.doi===doi)||Object.values(state.saved).find(x=>x.doi===doi);
+  if(!p||!doi)return;
+  if(!figureCache.has(doi))figureCache.set(doi,findFigureOne(p));
+  const url=await figureCache.get(doi);
+  if(!url||!el.isConnected)return;
+  const img=new Image();
+  img.alt='Figure 1 from the original paper';img.loading='lazy';
+  img.onload=()=>{if(el.isConnected){el.replaceChildren(img);el.classList.add('has-figure');const label=document.createElement('small');label.textContent='Figure 1 · original publication';el.appendChild(label)}};
+  img.onerror=()=>{};
+  img.src=url;
+ });
 }
 function card(p){
  const saved=!!state.saved[p.id];
- return '<article class="paper paper-with-concept">'+conceptVisual(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+ return '<article class="paper paper-with-concept">'+figureMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
-function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;}
+function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;loadFigures();}
 
 async function timedJSON(url,ms=9000){
  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),ms);
