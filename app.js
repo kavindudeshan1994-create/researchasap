@@ -4,7 +4,11 @@ const JOURNALS=[...new Set(Object.values(GROUPS).flat())];
 const DEFAULT=["ACS Nano","Journal of the American Chemical Society","Nature Chemistry","Nature Chemical Biology","ACS Chemical Biology","Nature Nanotechnology","Nano Letters"];
 const $=id=>document.getElementById(id);
 const load=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback}catch{return fallback}};
-const state={selected:new Set(load("rasap.journals",DEFAULT).filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
+const previousSelection=load("rasap.journals",null);
+const selectionNeedsMigration=!localStorage.getItem("rasap.journalSelectionV2")&&(!Array.isArray(previousSelection)||(previousSelection.length===1&&previousSelection[0]==="ACS Nano"));
+const initialSelection=selectionNeedsMigration?DEFAULT:(Array.isArray(previousSelection)?previousSelection:DEFAULT);
+if(selectionNeedsMigration){localStorage.setItem("rasap.journals",JSON.stringify(initialSelection));localStorage.setItem("rasap.journalSelectionV2","1")}
+const state={selected:new Set(initialSelection.filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plain=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,positions] of Object.entries(idx)){for(const p of positions)if(Number.isInteger(p)&&p>=0&&p<5000)arr[p]=word}return arr.filter(Boolean).join(" ")};
