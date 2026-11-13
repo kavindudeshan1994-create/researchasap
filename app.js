@@ -51,9 +51,7 @@ function conceptFor(p){
  return ["RESEARCH CONCEPT","✳","Scientific question","Research findings"];
 }
 function graphicMarkup(p){
- const [theme]=journalTheme(p.journal);
- const [category,symbol,left,right]=conceptFor(p);
- return '<div class="paper-visual concept-figure '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="concept-header">'+escapeHTML(category)+'</div><div class="concept-flow"><div class="concept-node"><span class="concept-symbol">'+symbol+'</span><span>'+escapeHTML(left)+'</span></div><span class="concept-arrow" aria-hidden="true">→</span><div class="concept-node"><span class="concept-symbol">✦</span><span>'+escapeHTML(right)+'</span></div></div><span class="visual-caption">AI-free topic illustration · not the paper’s graphical abstract</span></div>';
+ return '<div class="paper-visual paper-figure" data-graphic="'+escapeHTML(p.id)+'"><div class="figure-empty"><span class="figure-icon">▧</span><span>Publication figure not available in open-access sources</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View paper for figures ↗</a></div><span class="visual-caption">Original publication image, when available</span></div>';
 }
 
 async function lookupGraphic(p){
@@ -114,13 +112,17 @@ if(card.dataset.graphic!==id||card.querySelector('img'))continue;
 const img=document.createElement('img');
 img.loading='lazy';img.alt=result.type+' from the original paper';
 img.referrerPolicy='no-referrer';
-img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+' · Europe PMC'};
+img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent=result.type+' · Europe PMC';};
 img.onerror=()=>{graphicCache.set(id,null);img.remove()};
 img.src=result.url;
 }
 }
 
-function card(p){const saved=!!state.saved[p.id];return '<article class="paper">'+graphicMarkup(p)+'<div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
+function card(p){
+ const saved=!!state.saved[p.id];
+ return '<article class="paper paper-horizontal">'+graphicMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Show abstract</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+}
+
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
 function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
 
