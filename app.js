@@ -19,9 +19,86 @@ const store=()=>{localStorage.setItem("rasap.journals",JSON.stringify([...state.
 const summary=p=>{if(!p.abstract)return "No abstract available in the public metadata. Open the publisher article for details.";const s=p.abstract.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[];return s.slice(0,3).join(" ").trim().slice(0,520)+(p.abstract.length>520?"…":"")};
 const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publication_date||"",journal:w.primary_location?.source?.display_name||"Unknown journal",authors:(w.authorships||[]).slice(0,8).map(a=>a.author?.display_name).filter(Boolean).join(", "),abstract:abstractFromIndex(w.abstract_inverted_index),doi:w.doi||"",url:w.primary_location?.landing_page_url||w.doi||w.id,openAccess:w.open_access?.is_oa||false});
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");}
+
+// Graphical abstracts: only attempt images explicitly identified as graphical abstracts
+// in open-access Europe PMC full-text XML. No arbitrary figures or publisher scraping.
+const graphicCache=new Map();
+const graphicPending=new Set();
+const graphicQueue=[];
+let graphicWorkers=0;
+function journalTheme(journal){
+const j=journal.toLowerCase();
+if(/chem|organic|catal|jacs|angew|molecular/.test(j))return ["chem","⬡","CHEMISTRY"];
+if(/cell|biolog|protein|embo|membrane|biochem/.test(j))return ["bio","✺","LIFE SCIENCES"];
+if(/material|nano|physical|photon|science/.test(j))return ["materials","◇","MATERIALS & SCIENCE"];
+return ["general","✳","RESEARCH"];
+}
+function graphicMarkup(p){
+const [theme,symbol,category]=journalTheme(p.journal);
+return '<div class="paper-visual '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="visual-pattern" aria-hidden="true">'+symbol+'</div><div class="visual-text"><span>'+escapeHTML(category)+'</span><strong>'+escapeHTML(p.journal)+'</strong></div><span class="visual-caption">Journal design · not a graphical abstract</span></div>';
+}
+async function lookupGraphic(p){
+if(!p.doi||!p.openAccess)return null;
+const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
+if(!doi)return null;
+const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
+const search=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/search?query='+encodeURIComponent(query)+'&format=json&pageSize=1');
+if(!search.ok)return null;
+const item=(await search.json()).resultList?.result?.[0];
+if(!item?.pmcid||item.isOpenAccess!=="Y")return null;
+const xmlResponse=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/'+encodeURIComponent(item.pmcid)+'/fullTextXML');
+if(!xmlResponse.ok)return null;
+const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
+if(xml.querySelector('parsererror'))return null;
+const figures=[...xml.getElementsByTagName('fig')];
+const figure=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract/i.test((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')));
+if(!figure)return null;
+const graphic=figure.getElementsByTagName('graphic')[0];
+const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
+if(!href||!/^[-\w.]+$/.test(href))return null;
+return 'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+encodeURIComponent(href);
+}
+function queueGraphics(){
+const cards=[...document.querySelectorAll('[data-graphic]')];
+for(const card of cards){
+const id=card.dataset.graphic;
+const p=state.papers.find(p=>p.id===id)||state.saved[id];
+if(!p)continue;
+if(graphicCache.has(id)){applyGraphic(id,graphicCache.get(id));continue}
+if(!p.openAccess||!p.doi||graphicPending.has(id))continue;
+graphicPending.add(id);graphicQueue.push(p);
+}
+while(graphicWorkers<2&&graphicQueue.length)runGraphicWorker();
+}
+async function runGraphicWorker(){
+graphicWorkers++;
+try{
+while(graphicQueue.length){
+const p=graphicQueue.shift();
+let url=null;
+try{url=await lookupGraphic(p)}catch{}
+graphicCache.set(p.id,url);
+graphicPending.delete(p.id);
+applyGraphic(p.id,url);
+}
+}finally{graphicWorkers--}
+}
+function applyGraphic(id,url){
+if(!url)return;
+for(const card of document.querySelectorAll('[data-graphic]')){
+if(card.dataset.graphic!==id||card.querySelector('img'))continue;
+const img=document.createElement('img');
+img.loading='lazy';img.alt='Original graphical abstract (open-access article)';
+img.referrerPolicy='no-referrer';
+img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent='Graphical abstract · Europe PMC'};
+img.onerror=()=>{graphicCache.set(id,null)};
+img.src=url;
+}
+}
+
 function card(p){const saved=!!state.saved[p.id];return '<article class="paper"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span><span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':"")+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Read details</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></article>'}
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
-function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;}
+function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
 async function fetchPapers(){
 const request=++state.request;
 state.loading=true;state.papers=[];state.hasMore=false;render();
@@ -82,7 +159,7 @@ $("status").textContent=state.papers.length?state.papers.length+" papers loaded 
 }catch(err){if(request===state.request)$("status").textContent="Unable to load papers: "+err.message}
 finally{if(request===state.request){state.loading=false;render()}}
 }
-function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are not included unless reliable image rights and sources can be established.</p>';$("details").showModal()}
+function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are shown only when a matching image is found in open-access Europe PMC full text; otherwise the card uses a journal-themed illustration.</p>';$("details").showModal()}
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;fetchPapers()});
 $("journalSearch").addEventListener("input",renderJournals);
 $("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1;fetchPapers()};
