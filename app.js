@@ -43,21 +43,33 @@ async function findFigureOne(p){
  }catch{return null}
 }
 function figureMarkup(p){
- return '<div class="paper-figure-one" data-figure-doi="'+escapeHTML(p.doi||'')+'"><span>Figure 1 unavailable in public full-text metadata.</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View original figures ↗</a></div>';
+ return '<div class="paper-figure-one" data-figure-doi="'+escapeHTML(p.doi||'')+'"></div>';
 }
 function loadFigures(){
  document.querySelectorAll('[data-figure-doi]').forEach(async el=>{
   const doi=el.dataset.figureDoi;
   const p=state.papers.find(x=>x.doi===doi)||Object.values(state.saved).find(x=>x.doi===doi);
   if(!p||!doi)return;
+  const key=doiKey(p);
+  const code=key.split('/').pop();
+  const acsId=code.replace(/^acsnano\\./,'nn');
+  const candidates=[];
+  if(verifiedFigures[key]?.url)candidates.push(verifiedFigures[key].url);
+  if(key.startsWith('10.1021/acsnano.')){
+   for(const ext of ['gif','jpeg','png','jpg']){
+    candidates.push('https://pubs.acs.org/cms/'+key+'/asset/images/medium/'+acsId+'_0001.'+ext);
+   }
+  }
   if(!figureCache.has(doi))figureCache.set(doi,findFigureOne(p));
-  const url=await figureCache.get(doi);
-  if(!url||!el.isConnected)return;
-  const img=new Image();
-  img.alt='Figure 1 from the original paper';img.loading='lazy';
-  img.onload=()=>{if(el.isConnected){el.replaceChildren(img);el.classList.add('has-figure');const label=document.createElement('small');label.textContent='Figure 1 · original publication';el.appendChild(label)}};
-  img.onerror=()=>{};
-  img.src=url;
+  const xmlFigure=await figureCache.get(doi);
+  if(xmlFigure)candidates.push(xmlFigure);
+  for(const url of [...new Set(candidates)]){
+   if(!el.isConnected)break;
+   const img=new Image();
+   img.alt='Article image from ACS Nano';img.loading='lazy';img.referrerPolicy='no-referrer';
+   const works=await new Promise(resolve=>{img.onload=()=>resolve(img.naturalWidth>80&&img.naturalHeight>50);img.onerror=()=>resolve(false);img.src=url});
+   if(works&&el.isConnected){el.replaceChildren(img);el.classList.add('has-figure');const label=document.createElement('small');label.textContent='Image from original publication';el.appendChild(label);break}
+  }
  });
 }
 function card(p){
