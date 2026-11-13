@@ -18,6 +18,7 @@ const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,posi
 const store=()=>{localStorage.setItem("rasap.journals",JSON.stringify([...state.selected]));localStorage.setItem("rasap.saved",JSON.stringify(state.saved))};
 const summary=p=>{if(!p.abstract)return "No abstract available in the public metadata. Open the publisher article for details.";const s=p.abstract.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[];return s.slice(0,3).join(" ").trim().slice(0,520)+(p.abstract.length>520?"…":"")};
 const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publication_date||"",journal:w.primary_location?.source?.display_name||"Unknown journal",authors:(w.authorships||[]).slice(0,8).map(a=>a.author?.display_name).filter(Boolean).join(", "),abstract:abstractFromIndex(w.abstract_inverted_index),doi:w.doi||"",url:w.primary_location?.landing_page_url||w.doi||w.id,openAccess:w.open_access?.is_oa||false});
+function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");}
 
 // Graphical abstracts: only attempt images explicitly identified as graphical abstracts
@@ -185,10 +186,10 @@ async function fetchPapers(){
  finally{if(request===state.request){state.loading=false;render()}}
 }
 function showDetail(id){const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;$("detailContent").innerHTML='<p class="muted">'+escapeHTML(p.journal)+" · "+escapeHTML(p.date)+'</p><h2>'+escapeHTML(p.title)+'</h2><p>'+escapeHTML(p.authors)+'</p><h3>Abstract-based preview</h3><p>'+escapeHTML(summary(p))+'</p><h3>Full abstract</h3><p class="abstract">'+escapeHTML(p.abstract||"No abstract available in OpenAlex metadata.")+'</p><p><strong>DOI:</strong> '+(p.doi?'<a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.doi)+'">'+escapeHTML(p.doi)+'</a>':"Not available")+'</p><p><a class="link" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(p.url)+'">Open original paper ↗</a></p><p class="muted">Summaries are excerpts from metadata abstracts, not independently generated AI analysis. Graphical abstracts are shown only when a matching image is found in open-access Europe PMC full text; otherwise the card uses a journal-themed illustration.</p>';$("details").showModal()}
-$("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;fetchPapers()});
+$("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;updateJournalCount()});
 $("journalSearch").addEventListener("input",renderJournals);
-$("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1;fetchPapers()};
-$("clearJournals").onclick=()=>{state.selected.clear();store();renderJournals();state.page=1;fetchPapers()};
+$("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1;updateJournalCount()};
+$("clearJournals").onclick=()=>{state.selected.clear();store();renderJournals();state.page=1;updateJournalCount()};
 $("refresh").onclick=fetchPapers;
 $("tabLatest").onclick=()=>{state.view="latest";render()};
 $("tabSaved").onclick=()=>{state.view="saved";$("status").textContent="Saved papers are stored only on this device.";render()};
@@ -198,4 +199,4 @@ $("previous").onclick=()=>{if(state.page>1){state.page--;fetchPapers();window.sc
 $("next").onclick=()=>{if(state.hasMore){state.page++;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
 $("papers").addEventListener("click",e=>{const detail=e.target.closest("[data-detail]");if(detail){showDetail(detail.dataset.detail);return}const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
 $("closeDetails").onclick=()=>$("details").close();
-renderJournals();render();fetchPapers();
+const journalSidebar=document.querySelector(".sidebar");$("journalDialogBody").appendChild(journalSidebar);$("openJournals").onclick=()=>{$("journalDialog").showModal()};$("closeJournals").onclick=()=>$("journalDialog").close();$("applyJournals").onclick=()=>{$("journalDialog").close();state.page=1;fetchPapers()};renderJournals();render();fetchPapers();
