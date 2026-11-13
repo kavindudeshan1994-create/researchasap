@@ -74,3 +74,16 @@ body.journal-popup-open{overflow:hidden}
  .paper-with-concept .paper-copy{padding:18px}
  .paper-with-concept .paper-copy h3{font-size:17px}
 }
+
+
+/* ResearchASAP: single vertical stack at EVERY viewport size. */
+#papers.papers{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;align-items:stretch!important;width:100%!important;max-width:1050px!important;margin:0 auto!important;gap:18px!important}
+#papers.papers>article.paper{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;width:100%!important;max-width:100%!important;min-width:0!important;grid-template-columns:none!important;gap:0!important}
+#papers.papers>article.paper>.paper-copy{display:block!important;width:100%!important;min-width:0!important;padding:22px 26px!important}
+#papers.papers>article.paper>.paper-figure-one:not(.has-figure){display:none!important}
+#papers.papers>article.paper>.paper-figure-one.has-figure{display:flex!important;float:none!important;width:100%!important;min-height:0!important;max-height:300px!important;border-right:0!important;border-bottom:1px solid #e0e6f0!important}
+#papers.papers>article.paper>.paper-copy h3{font-size:19px!important;line-height:1.45!important;overflow-wrap:anywhere!important;white-space:normal!important;margin:10px 0!important}
+#papers.papers>article.paper>.paper-copy .authors{line-height:1.55!important;overflow-wrap:anywhere!important}
+#papers.papers>article.paper>.paper-copy .paper-abstract{font-size:14px!important;line-height:1.7!important;overflow-wrap:anywhere!important;white-space:normal!important;margin:12px 0 18px!important}
+#papers.papers>article.paper>.paper-copy .paper-actions{margin-top:14px!important}
+@media(max-width:680px){#papers.papers>article.paper>.paper-copy{padding:18px!important}#papers.papers>article.paper>.paper-copy h3{font-size:17px!important}}
