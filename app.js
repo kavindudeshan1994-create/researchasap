@@ -37,7 +37,7 @@ return ["general","✳","RESEARCH"];
 }
 function graphicMarkup(p){
 const [theme,symbol,category]=journalTheme(p.journal);
-return '<div class="paper-visual '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="visual-pattern" aria-hidden="true">'+symbol+'</div><div class="visual-text"><span>'+escapeHTML(category)+'</span><strong>'+escapeHTML(p.journal)+'</strong></div><span class="visual-caption">Journal design · not a graphical abstract</span></div>';
+return '<div class="paper-visual '+theme+'" data-graphic="'+escapeHTML(p.id)+'"><div class="visual-pattern" aria-hidden="true">'+symbol+'</div><div class="visual-text"><span>'+escapeHTML(category)+'</span><strong>'+escapeHTML(p.journal)+'</strong></div><span class="visual-caption">Illustration · original graphical abstract unavailable</span></div>';
 }
 async function lookupGraphic(p){
 if(!p.doi)return null;
@@ -53,7 +53,8 @@ if(!xmlResponse.ok)return null;
 const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
 if(xml.querySelector('parsererror'))return null;
 const figures=[...xml.getElementsByTagName('fig')];
-const figure=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract/i.test((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')));
+const figure=figures.find(fig=>/graphical abstract|graphic abstract|visual abstract|graphical summary/i.test((fig.getAttribute('fig-type')||'')+' '+(fig.getElementsByTagName('label')[0]?.textContent||'')+' '+(fig.getElementsByTagName('caption')[0]?.textContent||'')));
+
 if(!figure)return null;
 const graphic=figure.getElementsByTagName('graphic')[0];
 const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href');
@@ -62,7 +63,7 @@ return 'https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/'+
 }
 function queueGraphics(){
 const cards=[...document.querySelectorAll('[data-graphic]')];
-for(const card of cards.slice(0,8)){
+for(const card of cards.slice(0,16)){
 const id=card.dataset.graphic;
 const p=state.papers.find(p=>p.id===id)||state.saved[id];
 if(!p)continue;
@@ -92,8 +93,8 @@ if(card.dataset.graphic!==id||card.querySelector('img'))continue;
 const img=document.createElement('img');
 img.loading='lazy';img.alt='Original graphical abstract (open-access article)';
 img.referrerPolicy='no-referrer';
-img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent='Graphical abstract · Europe PMC'};
-img.onerror=()=>{graphicCache.set(id,null)};
+img.onload=()=>{card.classList.add('has-graphic');card.appendChild(img);card.querySelector('.visual-caption').textContent='Original graphical abstract · Europe PMC'};
+img.onerror=()=>{graphicCache.set(id,null);img.remove()};
 img.src=url;
 }
 }
