@@ -52,90 +52,17 @@ function conceptFor(p){
  for(const [pattern,data] of rules)if(pattern.test(t))return data;
  return ["RESEARCH CONCEPT","✳","Scientific question","Research findings"];
 }
+// Clean baseline: no unverified image requests. Figure retrieval will be rebuilt after source validation.
 function graphicMarkup(p){
- return '<div class="paper-visual paper-figure" data-graphic="'+escapeHTML(p.id)+'"><div class="figure-empty"><span class="figure-icon">▧</span><span>Publication figure not available in open-access sources</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View paper for figures ↗</a></div><span class="visual-caption">Original publication image, when available</span></div>';
+ return '<div class="paper-visual paper-figure"><div class="figure-empty"><span class="figure-icon">▧</span><span>Scientific figure pending verification</span><a href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">View original paper ↗</a></div><span class="visual-caption">Publisher figure / Figure 1</span></div>';
 }
-
-async function lookupGraphic(p){
-if(!p.doi)return null;
-const key=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,'').toLowerCase();
-if(publisherFigures[key]?.url)return {url:publisherFigures[key].url,type:publisherFigures[key].type||'Publisher image'};
-const doi=p.doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i,"");
-if(!doi)return null;
-const query='DOI:'+doi+' AND OPEN_ACCESS:Y';
-const search=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/search?query='+encodeURIComponent(query)+'&format=json&pageSize=1');
-if(!search.ok)return null;
-const item=(await search.json()).resultList?.result?.[0];
-if(!item?.pmcid||item.isOpenAccess!=="Y")return null;
-const xmlResponse=await fetch('https://www.ebi.ac.uk/europepmc/webservices/rest/'+encodeURIComponent(item.pmcid)+'/fullTextXML');
-if(!xmlResponse.ok)return null;
-const xml=new DOMParser().parseFromString(await xmlResponse.text(),'application/xml');
-if(xml.querySelector('parsererror'))return null;
-const figures=[...xml.getElementsByTagName('fig')];
-const ranked=figures.map((fig,index)=>{
- const label=fig.getElementsByTagName('label')[0]?.textContent?.trim()||'';
- const caption=fig.getElementsByTagName('caption')[0]?.textContent?.trim()||'';
- const isFirst=/^(fig(?:ure)?\s*[.:-]?\s*1)\b/i.test(label);
- const isGraphical=/graphical abstract|visual abstract|table of contents graphic|toc graphic/i.test(label+' '+caption);
- return {fig,index,label,isFirst,isGraphical};
-}).sort((a,b)=>Number(b.isGraphical)-Number(a.isGraphical)||Number(b.isFirst)-Number(a.isFirst)||a.index-b.index);
-for(const itemFig of ranked){
- const fig=itemFig.fig;
- const graphic=fig.getElementsByTagName('graphic')[0]||fig.getElementsByTagName('inline-graphic')[0];
- const href=graphic?.getAttribute('xlink:href')||graphic?.getAttributeNS('http://www.w3.org/1999/xlink','href')||graphic?.getAttribute('href');
- if(!href||!/^[A-Za-z0-9_.-]+$/.test(href))continue;
- const root='https://europepmc.org/articles/'+encodeURIComponent(item.pmcid)+'/bin/';
- const candidates=[href];
- if(!/\.(?:jpe?g|png|gif|webp|tiff?)$/i.test(href))candidates.push(href+'.jpg',href+'.png',href+'.gif');
- return {url:root+encodeURIComponent(candidates[0]),alternates:candidates.slice(1).map(name=>root+encodeURIComponent(name)),type:itemFig.isGraphical?'Graphical abstract':itemFig.isFirst?'Figure 1':'First available figure'};
-}
-return null;
-}
-function queueGraphics(){
-const cards=[...document.querySelectorAll('[data-graphic]')];
-for(const card of cards.slice(0,20)){
-const id=card.dataset.graphic;
-const p=state.papers.find(p=>p.id===id)||state.saved[id];
-if(!p)continue;
-if(graphicCache.has(id)){applyGraphic(id,graphicCache.get(id));continue}
-if(!p.doi||graphicPending.has(id))continue;
-graphicPending.add(id);graphicQueue.push(p);
-}
-while(graphicWorkers<2&&graphicQueue.length)runGraphicWorker();
-}
-async function runGraphicWorker(){
-graphicWorkers++;
-try{
-while(graphicQueue.length){
-const p=graphicQueue.shift();
-let url=null;
-try{url=await lookupGraphic(p)}catch{}
-graphicCache.set(p.id,url);
-graphicPending.delete(p.id);
-applyGraphic(p.id,url);
-}
-}finally{graphicWorkers--}
-}
-function applyGraphic(id,result){
-if(!result)return;
-for(const card of document.querySelectorAll('[data-graphic]')){
-if(card.dataset.graphic!==id||card.querySelector('img'))continue;
-const img=document.createElement('img');
-img.loading='lazy';img.alt=result.type+' from the original paper';
-img.referrerPolicy='no-referrer';
-card.appendChild(img);img.onload=()=>{card.classList.add('has-graphic');card.querySelector('.visual-caption').textContent=result.type+(result.type==='Publisher image'?' · Publisher':' · Europe PMC');};
-let fallbackIndex=0;img.onerror=()=>{if(fallbackIndex<(result.alternates||[]).length){img.src=result.alternates[fallbackIndex++];return;}graphicCache.set(id,null);img.remove()};
-img.src=result.url;
-}
-}
-
 function card(p){
  const saved=!!state.saved[p.id];
- return '<article class="paper paper-horizontal">'+graphicMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="secondary" data-detail="'+escapeHTML(p.id)+'">Show abstract</button><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+ return '<article class="paper paper-horizontal">'+graphicMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p>'+escapeHTML(summary(p))+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?a.date.localeCompare(b.date):b.date.localeCompare(a.date))}
-function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;queueGraphics();}
+function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;}
 
 async function timedJSON(url,ms=9000){
  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),ms);
