@@ -105,9 +105,9 @@ async function timedJSON(url,ms=9000){
  try{const r=await fetch(url,{signal:ctrl.signal});if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
  finally{clearTimeout(timer)}
 }
-async function fetchCrossref(names){
+async function fetchCrossref(names,cutoff){
  const found=new Map();
- const date=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+ const date=cutoff;
  const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
  const results=await Promise.allSettled(names.slice(0,4).map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+date+"&rows=12&sort=published&order=desc",9000)));
  results.forEach((result,i)=>{
@@ -128,6 +128,9 @@ async function fetchPapers(){
  if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
  $("status").textContent="Updating papers…";render();
  const selected=[...state.selected],cache=load("rasap.sourceIds",{}),ids=[];
+ const shortWindow=selected.length>5;
+ const cutoff=new Date(Date.now()-(shortWindow?48*3600000:365*86400000)).toISOString().slice(0,10);
+ const windowLabel=shortWindow?"Last 48 hours":"Last 1 year";
  let cursor=0;let failures=0;let papers=[];
  try{
   const norm=s=>s.toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -149,7 +152,7 @@ async function fetchPapers(){
   const unique=[...new Set(ids)],groups=[];
   for(let i=0;i<unique.length;i+=12)groups.push(unique.slice(i,i+12));
   let index=0;const responses=[];
-  const date=new Date(Date.now()-120*86400000).toISOString().slice(0,10);
+  const date=cutoff;
   async function worksWorker(){
    while(index<groups.length){
     if(request!==state.request)return;
@@ -172,11 +175,11 @@ async function fetchPapers(){
  try{
   if(!papers.length){
    $("status").textContent="Trying backup paper source…";render();
-   papers=await fetchCrossref(selected);
+   papers=await fetchCrossref(selected,cutoff);
    state.hasMore=false;
    if(request!==state.request)return;
-   $("status").textContent=papers.length?"Showing Crossref backup papers from up to 4 journals.":"No papers returned. Try fewer journals or refresh later.";
-  }else $("status").textContent="Showing "+papers.length+" recent papers"+(failures?" · Some requests failed":"");
+   $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel+" · Up to 4 journals":"No papers returned · "+windowLabel+". Try fewer journals or refresh later.";
+  }else $("status").textContent="Showing "+papers.length+" recent papers · "+windowLabel+(failures?" · Some requests failed":"");
   state.papers=papers;
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
  }catch(e){$("status").textContent="Paper services unavailable: "+e.message}
