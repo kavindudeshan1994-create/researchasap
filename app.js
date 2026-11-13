@@ -109,8 +109,8 @@ async function timedJSON(url,ms=9000){
 async function fetchCrossref(names,cutoff){
  const found=new Map();
  const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
- const chosen=names.slice(0,Math.min(names.length,8));
- const results=await Promise.allSettled(chosen.map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=30&sort=published&order=desc",12000)));
+ const chosen=names.slice(0,Math.min(names.length,12));
+ const results=await Promise.allSettled(chosen.map(n=>timedJSON("https://api.crossref.org/works?query.container-title="+encodeURIComponent(n)+"&filter=from-pub-date:"+cutoff+"&rows=100&sort=published&order=desc",12000)));
  let errors=0;
  results.forEach((result,i)=>{
   if(result.status!=="fulfilled"){errors++;return}
@@ -119,10 +119,10 @@ async function fetchCrossref(names,cutoff){
    if(!w.DOI)continue;
    const journal=w["container-title"]?.[0]||"";
    const candidate=norm(journal);
-   if(candidate!==target && !(target.length>12&&(candidate.includes(target)||target.includes(candidate))))continue;
+   if(candidate!==target && !(target.length>8&&(candidate.includes(target)||target.includes(candidate))) && !(candidate.length>8&&target.includes(candidate)))continue;
    const d=w.published?.["date-parts"]?.[0]||w.issued?.["date-parts"]?.[0]||[];
    const date=d.map((x,k)=>k?String(x).padStart(2,"0"):String(x)).join("-");
-   if(date&&date<cutoff)continue;
+   if(date&&date.padEnd(10,"-01")<cutoff)continue;
    const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:false};
    found.set(p.id,p);
   }
@@ -149,8 +149,8 @@ async function fetchPapers(){
    $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
    render();return;
   }
-  $("status").textContent="No matching Crossref papers; checking OpenAlex…";render();
- }catch(e){$("status").textContent="Crossref unavailable; checking OpenAlex…";render()}
+  $("status").textContent="Crossref returned no matching papers ("+backup.errors+"/"+backup.checked+" requests failed); checking OpenAlex…";render();
+ }catch(e){$("status").textContent="Crossref error: "+e.message+"; checking OpenAlex…";render()}
 
  let cursor=0;let failures=0;let papers=[];
  try{
@@ -200,7 +200,7 @@ async function fetchPapers(){
    papers=fallback.papers;
    state.hasMore=false;
    if(request!==state.request)return;
-   $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel+" · Up to 4 journals":"No papers returned · "+windowLabel+". Try fewer journals or refresh later.";
+   $("status").textContent=papers.length?"Showing Crossref backup papers · "+windowLabel:"No papers returned · "+windowLabel+" · "+failures+" OpenAlex request failures. Try selecting Nature or Science to test the connection.";
   }else $("status").textContent="Showing "+papers.length+" recent papers · "+windowLabel+(failures?" · Some requests failed":"");
   state.papers=papers;
   $("updated").textContent="Checked "+new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
