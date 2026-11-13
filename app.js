@@ -10,7 +10,7 @@ const resetToMixed=!localStorage.getItem("rasap.mixedFeedFix20261113");
 const initialSelection=resetToMixed?DEFAULT:(selectionNeedsMigration?DEFAULT:(Array.isArray(previousSelection)?previousSelection:DEFAULT));
 if(resetToMixed){localStorage.setItem("rasap.journals",JSON.stringify(DEFAULT));localStorage.setItem("rasap.mixedFeedFix20261113","1")}
 if(selectionNeedsMigration){localStorage.setItem("rasap.journals",JSON.stringify(initialSelection))}
-const state={selected:new Set(initialSelection.filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
+const state={selected:new Set(initialSelection.filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false,searchResults:[],searchLoading:false,searchPage:1,searchHasMore:false,searchRequest:0,searchTimer:null};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plain=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,positions] of Object.entries(idx)){for(const p of positions)if(Number.isInteger(p)&&p>=0&&p<5000)arr[p]=word}return arr.filter(Boolean).join(" ")};
@@ -63,7 +63,7 @@ function figureMarkup(p){
 function loadFigures(){
  document.querySelectorAll('[data-figure-doi]').forEach(async el=>{
   const doi=el.dataset.figureDoi;
-  const p=state.papers.find(x=>x.doi===doi)||Object.values(state.saved).find(x=>x.doi===doi);
+  const p=state.papers.find(x=>x.doi===doi)||state.searchResults.find(x=>x.doi===doi)||Object.values(state.saved).find(x=>x.doi===doi);
   if(!p||!doi)return;
   const key=doiKey(p);
   const code=key.split('/').pop();
@@ -92,9 +92,45 @@ function card(p){
  return '<article class="paper paper-with-concept">'+figureMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(publishedLabel(p))+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
-function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?comparePublished(b,a):comparePublished(a,b))}
-function render(){const a=currentPapers();$("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+(state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":"No papers found. Try other journals or refresh.")+'</div>';$("savedCount").textContent=Object.keys(state.saved).length;$("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");$("previous").disabled=state.view==="saved"||state.page<=1||state.loading;$("next").disabled=state.view==="saved"||!state.hasMore||state.loading;$("pageLabel").textContent=state.view==="latest"?"Page "+state.page:"Saved papers";$("refresh").disabled=state.loading;loadFigures();}
-
+function currentPapers(){
+ let a=state.view==="saved"?Object.values(state.saved):(state.query.trim()?state.searchResults:state.papers);
+ const q=state.query.trim().toLowerCase();
+ if(state.oaOnly)a=a.filter(p=>p.openAccess===true);
+ if(q&&state.view==="saved")a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));
+ return [...a].sort((a,b)=>$("sort").value==="oldest"?comparePublished(b,a):comparePublished(a,b));
+}
+function render(){
+ const a=currentPapers(),searchMode=state.view==="latest"&&!!state.query.trim();
+ $("papers").innerHTML=a.length?a.map(card).join(""):'<div class="empty">'+((searchMode&&state.searchLoading)||state.loading?"Loading papers…":state.view==="saved"?"No saved papers match your search.":searchMode?"No matching papers found in the last 10 years.":"No papers found. Try other journals or refresh.")+'</div>';
+ $("savedCount").textContent=Object.keys(state.saved).length;
+ $("tabLatest").classList.toggle("active",state.view==="latest");$("tabSaved").classList.toggle("active",state.view==="saved");
+ $("previous").disabled=state.view==="saved"||(searchMode?state.searchPage<=1:state.page<=1)||(searchMode?state.searchLoading:state.loading);
+ $("next").disabled=state.view==="saved"||(searchMode?!state.searchHasMore:!state.hasMore)||(searchMode?state.searchLoading:state.loading);
+ $("pageLabel").textContent=state.view==="latest"?"Page "+(searchMode?state.searchPage:state.page):"Saved papers";
+ $("refresh").disabled=state.loading;loadFigures();
+}
+async function searchTenYears(){
+ const request=++state.searchRequest,query=state.query.trim();
+ if(!query){state.searchResults=[];state.searchLoading=false;state.searchHasMore=false;$("status").textContent="Latest papers from selected journals · Last 30 days";render();return}
+ state.searchLoading=true;
+ $("status").textContent="Searching all scientific journals · Last 10 years · "+query;
+ render();
+ try{
+  const from=new Date();from.setFullYear(from.getFullYear()-10);
+  const date=from.toISOString().slice(0,10);
+  const filter="from_publication_date:"+date+",to_publication_date:"+new Date().toISOString().slice(0,10);
+  const url="https://api.openalex.org/works?search="+encodeURIComponent(query)+"&filter="+encodeURIComponent(filter)+"&sort=relevance_score:desc&per-page=50&page="+state.searchPage;
+  const data=await timedJSON(url,18000);
+  if(request!==state.searchRequest)return;
+  state.searchResults=(data.results||[]).map(normalize);
+  state.searchHasMore=(data.meta?.count||0)>state.searchPage*50;
+  $("status").textContent="Search across all journals · Last 10 years · "+(data.meta?.count||0).toLocaleString()+" matching papers · Page "+state.searchPage;
+ }catch(e){
+  if(request!==state.searchRequest)return;
+  state.searchResults=[];state.searchHasMore=false;
+  $("status").textContent="10-year search unavailable: "+e.message+". Please try again.";
+ }finally{if(request===state.searchRequest){state.searchLoading=false;render()}}
+}
 async function timedJSON(url,ms=9000){
  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),ms);
  try{const r=await fetch(url,{signal:ctrl.signal});if(!r.ok)throw Error("HTTP "+r.status);return await r.json()}
@@ -218,13 +254,13 @@ $("journalSearch").addEventListener("input",renderJournals);
 $("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1};
 $("clearJournals").onclick=()=>{state.selected.clear();store();renderJournals();state.page=1;updateJournalCount()};
 $("refresh").onclick=fetchPapers;
-$("tabLatest").onclick=()=>{state.view="latest";render()};
+$("tabLatest").onclick=()=>{state.view="latest";if(state.query.trim())searchTenYears();else render()};
 $("tabSaved").onclick=()=>{state.view="saved";$("status").textContent="Saved papers are stored only on this device.";render()};
-$("paperSearch").addEventListener("input",e=>{state.query=e.target.value;render()});
+$("paperSearch").addEventListener("input",e=>{state.query=e.target.value;state.searchPage=1;clearTimeout(state.searchTimer);++state.searchRequest;if(!state.query.trim()){state.searchResults=[];state.searchLoading=false;$("status").textContent="Latest papers from selected journals · Last 30 days";render();return}state.searchLoading=true;render();state.searchTimer=setTimeout(searchTenYears,450)});
 $("sort").addEventListener("change",render);
 $("oaOnly").addEventListener("change",e=>{state.oaOnly=e.target.checked;render();});
-$("previous").onclick=()=>{if(state.page>1){state.page--;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
-$("next").onclick=()=>{if(state.hasMore){state.page++;fetchPapers();window.scrollTo({top:0,behavior:"smooth"})}};
-$("papers").addEventListener("click",e=>{const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
+$("previous").onclick=()=>{if(state.query.trim()&&state.view==="latest"){if(state.searchPage>1){state.searchPage--;searchTenYears()}}else if(state.page>1){state.page--;fetchPapers()}window.scrollTo({top:0,behavior:"smooth"})};
+$("next").onclick=()=>{if(state.query.trim()&&state.view==="latest"){if(state.searchHasMore){state.searchPage++;searchTenYears()}}else if(state.hasMore){state.page++;fetchPapers()}window.scrollTo({top:0,behavior:"smooth"})};
+$("papers").addEventListener("click",e=>{const save=e.target.closest("[data-save]");if(save){const id=save.dataset.save;const p=state.papers.find(p=>p.id===id)||state.searchResults.find(p=>p.id===id)||state.saved[id];if(!p)return;if(state.saved[id])delete state.saved[id];else state.saved[id]=p;store();render()}});
 
 const journalSidebar=document.querySelector(".sidebar");const journalPopup=$("journalDialog");if(journalSidebar.parentElement!==$("journalDialogBody"))$("journalDialogBody").appendChild(journalSidebar);const openJournalPopup=()=>{journalPopup.hidden=false;document.body.classList.add("journal-popup-open");renderJournals()};const closeJournalPopup=()=>{journalPopup.hidden=true;document.body.classList.remove("journal-popup-open")};$("openJournals").addEventListener("click",openJournalPopup);$("closeJournals").addEventListener("click",closeJournalPopup);$("applyJournals").addEventListener("click",()=>{closeJournalPopup();state.page=1;fetchPapers()});journalPopup.addEventListener("click",e=>{if(e.target===journalPopup)closeJournalPopup()});document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!journalPopup.hidden)closeJournalPopup()});renderJournals();render();fetchPapers();
