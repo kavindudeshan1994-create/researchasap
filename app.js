@@ -1,10 +1,10 @@
 "use strict";
-const GROUPS={"ACS Nano pilot":["ACS Nano"]};
+const GROUPS={"General science":["Nature","Science","Cell","Proceedings of the National Academy of Sciences","Science Advances","Nature Communications","Scientific Reports","eLife"],"Chemistry":["Journal of the American Chemical Society","Angewandte Chemie International Edition","Nature Chemistry","Chemical Science","ACS Central Science","Organic Letters","The Journal of Organic Chemistry","Chemical Communications","Chemical Reviews","Accounts of Chemical Research","Chemical Society Reviews","Chemistry – A European Journal","Communications Chemistry"],"Chemical biology & biochemistry":["Nature Chemical Biology","ACS Chemical Biology","Cell Chemical Biology","RSC Chemical Biology","ChemBioChem","Bioconjugate Chemistry","Journal of Medicinal Chemistry","Biochemistry","Journal of Biological Chemistry","Molecular Cell","Nature Structural & Molecular Biology","The EMBO Journal","Protein Science","Journal of Molecular Biology"],"Cell & membrane biology":["Nature Cell Biology","Journal of Cell Biology","Molecular Biology of the Cell","Current Biology","Cell Reports","Traffic","Biochimica et Biophysica Acta (BBA) - Biomembranes","Journal of Membrane Biology","Journal of General Physiology"],"Imaging & analytics":["Nature Methods","Analytical Chemistry","ACS Sensors","Biosensors and Bioelectronics","Lab on a Chip"],"Preprints (not peer-reviewed)":["bioRxiv","medRxiv"],"Materials & nanoscience":["Nature Materials","Nature Nanotechnology","Advanced Materials","Advanced Functional Materials","ACS Nano","Nano Letters","Small","Advanced Science","ACS Applied Materials & Interfaces","Materials Horizons","Nanoscale Horizons","Nanoscale","Journal of Materials Chemistry B","Biomaterials Science","The Journal of Physical Chemistry B","The Journal of Physical Chemistry C","The Journal of Physical Chemistry Letters","Nature Photonics","Nature Biomedical Engineering","Nature Biotechnology"]};
 const JOURNALS=[...new Set(Object.values(GROUPS).flat())];
 const DEFAULT=["ACS Nano"];
 const $=id=>document.getElementById(id);
 const load=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(key));return v??fallback}catch{return fallback}};
-const state={selected:new Set(["ACS Nano"]),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
+const state={selected:new Set(load("rasap.journals",DEFAULT).filter(j=>JOURNALS.includes(j))),saved:load("rasap.saved",{}),papers:[],page:1,view:"latest",query:"",oaOnly:false,loading:false,request:0,hasMore:false};
 const escapeHTML=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const plain=s=>String(s??"").replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim();
 const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,positions] of Object.entries(idx)){for(const p of positions)if(Number.isInteger(p)&&p>=0&&p<5000)arr[p]=word}return arr.filter(Boolean).join(" ")};
@@ -13,7 +13,7 @@ const summary=p=>{if(!p.abstract)return "No abstract available in the public met
 const publicationKey=p=>p.publishedAt||p.date||"";
 const comparePublished=(a,b)=>publicationKey(b).localeCompare(publicationKey(a));
 const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publication_date||"",publishedAt:w.publication_date||"",journal:w.primary_location?.source?.display_name||"Unknown journal",authors:(w.authorships||[]).slice(0,8).map(a=>a.author?.display_name).filter(Boolean).join(", "),abstract:abstractFromIndex(w.abstract_inverted_index),doi:w.doi||"",url:w.primary_location?.landing_page_url||w.doi||w.id,openAccess:w.open_access?.is_oa||false});
-function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+(n>5?"Last 48 hours":"Last 1 year")}
+function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+"Last 1 month"}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
 
 const verifiedFigures={};
@@ -129,10 +129,9 @@ async function fetchPapers(){
  state.loading=true;state.hasMore=false;
  if(!state.selected.size){state.papers=[];$("status").textContent="Select at least one journal.";state.loading=false;render();return}
  $("status").textContent="Checking recent papers through Crossref…";render();
- const selected=["ACS Nano"],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
- const shortWindow=selected.length>5;
- const cutoff=new Date(Date.now()-(shortWindow?48*3600000:365*86400000)).toISOString().slice(0,10);
- const windowLabel=shortWindow?"Last 48 hours":"Last 1 year";
+ const selected=[...state.selected],preprintNames=selected.filter(n=>n==="bioRxiv"||n==="medRxiv"),journalNames=selected.filter(n=>!preprintNames.includes(n)),cache=load("rasap.sourceIds",{}),ids=[];
+ const cutoff=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+ const windowLabel="Last 1 month";
  try{
   const [backup,preprints]=await Promise.all([journalNames.length?fetchCrossref(journalNames,cutoff):Promise.resolve({papers:[],errors:0,checked:0}),preprintNames.length?fetchPreprints(preprintNames,cutoff):Promise.resolve([])]);
   if(request!==state.request)return;
@@ -204,7 +203,7 @@ async function fetchPapers(){
 }
 $("journalList").addEventListener("change",e=>{const j=e.target.dataset.journal;if(!j)return;e.target.checked?state.selected.add(j):state.selected.delete(j);store();state.page=1;updateJournalCount()});
 $("journalSearch").addEventListener("input",renderJournals);
-$("allJournals").onclick=()=>{state.selected=new Set(["ACS Nano"]);store();renderJournals();state.page=1};
+$("allJournals").onclick=()=>{state.selected=new Set(JOURNALS);store();renderJournals();state.page=1};
 $("clearJournals").onclick=()=>{state.selected.clear();store();renderJournals();state.page=1;updateJournalCount()};
 $("refresh").onclick=fetchPapers;
 $("tabLatest").onclick=()=>{state.view="latest";render()};
