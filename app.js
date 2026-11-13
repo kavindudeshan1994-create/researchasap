@@ -11,7 +11,16 @@ const abstractFromIndex=idx=>{if(!idx)return"";const arr=[];for(const [word,posi
 const store=()=>{localStorage.setItem("rasap.journals",JSON.stringify([...state.selected]));localStorage.setItem("rasap.saved",JSON.stringify(state.saved))};
 const summary=p=>{if(!p.abstract)return "No abstract available in the public metadata. Open the publisher article for details.";const s=p.abstract.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[];return s.slice(0,3).join(" ").trim().slice(0,520)+(p.abstract.length>520?"…":"")};
 const publicationKey=p=>p.publishedAt||p.date||"";
-const comparePublished=(a,b)=>publicationKey(b).localeCompare(publicationKey(a));
+const comparePublished=(a,b)=>{
+ const d=publicationKey(b).localeCompare(publicationKey(a));
+ return d||String(a.journal||"").localeCompare(String(b.journal||""))||String(a.title||"").localeCompare(String(b.title||""));
+};
+const publishedLabel=p=>{
+ const value=publicationKey(p);
+ if(!value.includes("T"))return p.date||value;
+ const time=value.match(/T(\\d{2}:\\d{2})(?::\\d{2})?/);
+ return (p.date||value.slice(0,10))+(time?" · "+time[1]+(value.endsWith("Z")?" UTC":""):"");
+};
 const normalize=w=>({id:w.id,title:plain(w.title||"Untitled paper"),date:w.publication_date||"",publishedAt:w.publication_date||"",journal:w.primary_location?.source?.display_name||"Unknown journal",authors:(w.authorships||[]).slice(0,8).map(a=>a.author?.display_name).filter(Boolean).join(", "),abstract:abstractFromIndex(w.abstract_inverted_index),doi:w.doi||"",url:w.primary_location?.landing_page_url||w.doi||w.id,openAccess:w.open_access?.is_oa||false});
 function updateJournalCount(){const n=state.selected.size;const label=n+" selected";const top=$("selectedJournalCount");if(top)top.textContent=label;const bottom=$("dialogSelectionCount");if(bottom)bottom.textContent=label+" · "+"Last 1 month"}
 function renderJournals(){const term=$("journalSearch").value.toLowerCase();$("journalList").innerHTML=Object.entries(GROUPS).map(([group,items])=>{const matches=items.filter(j=>j.toLowerCase().includes(term));return matches.length?'<div class="journal-group">'+escapeHTML(group)+'</div>'+matches.map(j=>'<label class="journal-row"><input type="checkbox" data-journal="'+escapeHTML(j)+'" '+(state.selected.has(j)?"checked":"")+'> <span>'+escapeHTML(j)+'</span></label>').join(""):""}).join("");updateJournalCount();}
@@ -74,7 +83,7 @@ function loadFigures(){
 }
 function card(p){
  const saved=!!state.saved[p.id];
- return '<article class="paper paper-with-concept">'+figureMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(p.date)+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
+ return '<article class="paper paper-with-concept">'+figureMarkup(p)+'<div class="paper-copy"><div class="meta"><span class="pill">'+escapeHTML(p.journal)+'</span>'+(p.preprint?'<span class="preprint-tag">Preprint · not peer-reviewed</span>':'')+'<span>'+escapeHTML(publishedLabel(p))+'</span>'+(p.openAccess?'<span>🔓 Open access</span>':'')+'</div><h3>'+escapeHTML(p.title)+'</h3><div class="authors">'+escapeHTML(p.authors||"Authors not listed")+'</div><p class="paper-abstract">'+escapeHTML(p.abstract||"Abstract not available in the public metadata.")+'</p><div class="paper-actions"><a class="secondary paper-link" href="'+escapeHTML(p.url||p.doi||'#')+'" target="_blank" rel="noopener noreferrer">Full text ↗</a><button class="save '+(saved?"saved":"")+'" data-save="'+escapeHTML(p.id)+'">'+(saved?"★ Saved":"☆ Save")+'</button></div></div></article>';
 }
 
 function currentPapers(){let a=state.view==="saved"?Object.values(state.saved):state.papers;const q=state.query.trim().toLowerCase();if(state.oaOnly)a=a.filter(p=>p.openAccess===true);if(q)a=a.filter(p=>[p.title,p.authors,p.abstract,p.journal].some(v=>String(v||"").toLowerCase().includes(q)));return [...a].sort((a,b)=>$("sort").value==="oldest"?comparePublished(b,a):comparePublished(a,b))}
@@ -103,7 +112,7 @@ async function fetchCrossref(names,cutoff){
    const d=w.published?.["date-parts"]?.[0]||w.issued?.["date-parts"]?.[0]||[];
    const date=d.map((x,k)=>k?String(x).padStart(2,"0"):String(x)).join("-");
    if(date&&date.padEnd(10,"-01")<cutoff)continue;
-   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,publishedAt:w.published?.["date-time"]||date,journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:(w.license||[]).some(l=>/creativecommons\.org\/licenses\/(by|by-sa|by-nc|zero)|creativecommons\.org\/publicdomain|openaccess|open-access/i.test(l.URL||""))};
+   const p={id:"crossref:"+w.DOI,title:plain(w.title?.[0]||"Untitled"),date,publishedAt:w.published?.["date-time"]||(d.length>=5?date+"T"+String(d[3]).padStart(2,"0")+":"+String(d[4]).padStart(2,"0"):date),journal,authors:(w.author||[]).slice(0,8).map(a=>[a.given,a.family].filter(Boolean).join(" ")).join(", "),abstract:plain(w.abstract||""),doi:"https://doi.org/"+w.DOI,url:w.URL||"https://doi.org/"+w.DOI,openAccess:(w.license||[]).some(l=>/creativecommons\.org\/licenses\/(by|by-sa|by-nc|zero)|creativecommons\.org\/publicdomain|openaccess|open-access/i.test(l.URL||""))};
    found.set(p.id,p);
   }
  });
